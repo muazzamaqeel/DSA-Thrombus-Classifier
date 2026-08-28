@@ -19,15 +19,4 @@ public partial class MainWindow : Window
         FrontalNiftiView.ResetFilesOtherCommand = LateralNiftiView.ResetFilesCommand;
         LateralNiftiView.ResetFilesOtherCommand = FrontalNiftiView.ResetFilesCommand;
     }
-
-    private void OpenLatencyTest_Click(object sender, RoutedEventArgs e)
-    {
-        var latencyWindow = new LatencyTestWindow
-        {
-            Owner = this,
-            DataContext = DataContext
-        };
-
-        latencyWindow.ShowDialog();
-    }
 }
