@@ -1,0 +1,263 @@
+<Window x:Class="UI.View.LatencyTestWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+        TextElement.FontWeight="ExtraLight"
+        TextElement.FontSize="12"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Auto"
+        Background="{DynamicResource MaterialDesignPaper}"
+        FontFamily="{DynamicResource MaterialDesignFont}"
+        WindowStartupLocation="CenterOwner"
+        Title="Latency Test"
+        Width="1024"
+        Height="856">
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
+        <StackPanel Orientation="Vertical">
+            <DockPanel>
+                <Button DockPanel.Dock="Left"
+                        Style="{StaticResource MaterialDesignIconForegroundButton}"
+                        Command="{Binding ShowAboutWindowCommand}"
+                        ToolTip="About">
+                    <materialDesign:PackIcon Kind="Information" />
+                </Button>
+
+                <TextBlock Style="{StaticResource MaterialDesignHeadline2TextBlock}"
+                           Text="Test - Latency"
+                           Margin="10"
+                           HorizontalAlignment="Center" />
+            </DockPanel>
+
+            <materialDesign:Card materialDesign:ElevationAssist.Elevation="Dp16"
+                                 UniformCornerRadius="15"
+                                 Margin="10"
+                                 Padding="15">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource MaterialDesignHeadline4TextBlock}"
+                               Text="Latency Evaluation"
+                               HorizontalAlignment="Center"
+                               Margin="10,5,10,10" />
+                    <TextBlock Style="{StaticResource MaterialDesignBody1TextBlock}"
+                               Text="Run the selected classifier across a dataset and measure the complete processing latency for every frontal/lateral DSA case."
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               Margin="20,0,20,10" />
+                </StackPanel>
+            </materialDesign:Card>
+
+            <materialDesign:Card UniformCornerRadius="15"
+                                 Margin="10"
+                                 Padding="20">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource MaterialDesignHeadline4TextBlock}"
+                               Text="Test Configuration"
+                               HorizontalAlignment="Center"
+                               Margin="0,0,0,20" />
+
+                    <TextBlock Style="{StaticResource MaterialDesignBody1TextBlock}"
+                               Text="Model Folder"
+                               HorizontalAlignment="Center"
+                               Margin="0,5,0,5" />
+
+                    <materialDesign:Badged HorizontalAlignment="Center"
+                                           Margin="20,5,20,0"
+                                           Badge="{Binding ModelSelectionFolderBadge}"
+                                           BadgeColorZoneMode="SecondaryMid">
+                        <Button Command="{Binding BrowseModelFolderCommand}">Select Model Folder</Button>
+                    </materialDesign:Badged>
+
+                    <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
+                               Text="{Binding ModelSelectionFolder}"
+                               IsEnabled="False"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               Margin="20,10,20,20" />
+
+                    <Separator Margin="20,5,20,20" />
+
+                    <TextBlock Style="{StaticResource MaterialDesignBody1TextBlock}"
+                               Text="Dataset Folder"
+                               HorizontalAlignment="Center"
+                               Margin="0,5,0,5" />
+
+                    <Button HorizontalAlignment="Center"
+                            Margin="20,5,20,0"
+                            Padding="20,6"
+                            Click="SelectLatencyDataset_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="FolderOpen"
+                                                     Width="20"
+                                                     Height="20"
+                                                     Margin="0,0,8,0" />
+                            <TextBlock Text="Select Dataset Folder"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <TextBlock x:Name="LatencyDatasetPathText"
+                               Style="{StaticResource MaterialDesignOverlineTextBlock}"
+                               Text="No dataset folder selected"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               Margin="20,10,20,5" />
+
+                    <TextBlock Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                               Text="The dataset folder will be scanned for matching frontal and lateral NIfTI sequences."
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap"
+                               Margin="20,0,20,20" />
+
+                    <Separator Margin="20,5,20,20" />
+
+                    <Button x:Name="StartLatencyTestButton"
+                            HorizontalAlignment="Center"
+                            Margin="10"
+                            Padding="30,10"
+                            IsEnabled="False"
+                            Click="StartLatencyTestButton_Click"
+                            ToolTip="Select a dataset before starting the test">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="Timer"
+                                                     Width="24"
+                                                     Height="24"
+                                                     Margin="0,0,10,0" />
+                            <TextBlock Text="START LATENCY TEST"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </materialDesign:Card>
+
+            <materialDesign:Card UniformCornerRadius="15"
+                                 Margin="10"
+                                 Padding="20">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource MaterialDesignHeadline4TextBlock}"
+                               Text="Test Progress"
+                               HorizontalAlignment="Center"
+                               Margin="0,0,0,15" />
+                    <ProgressBar x:Name="LatencyProgressBar"
+                                 Minimum="0"
+                                 Maximum="100"
+                                 Value="0"
+                                 Height="8"
+                                 Margin="20,5,20,10" />
+                    <TextBlock x:Name="LatencyProgressText"
+                               Style="{StaticResource MaterialDesignCaptionTextBlock}"
+                               Text="Waiting to start"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               Margin="10" />
+                </StackPanel>
+            </materialDesign:Card>
+
+            <materialDesign:Card UniformCornerRadius="15"
+                                 Margin="10"
+                                 Padding="20">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource MaterialDesignHeadline4TextBlock}"
+                               Text="Per-Case Results"
+                               HorizontalAlignment="Center"
+                               Margin="0,0,0,15" />
+                    <DataGrid x:Name="LatencyResultsGrid"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              HeadersVisibility="Column"
+                              MinHeight="200"
+                              Margin="5">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Case"
+                                                Binding="{Binding CaseName}"
+                                                Width="2*" />
+                            <DataGridTextColumn Header="Classification"
+                                                Binding="{Binding Classification}"
+                                                Width="*" />
+                            <DataGridTextColumn Header="Latency (ms)"
+                                                Binding="{Binding LatencyMilliseconds}"
+                                                Width="*" />
+                            <DataGridTextColumn Header="Status"
+                                                Binding="{Binding Status}"
+                                                Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </StackPanel>
+            </materialDesign:Card>
+
+            <materialDesign:Card UniformCornerRadius="15"
+                                 Margin="10"
+                                 Padding="20">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource MaterialDesignHeadline4TextBlock}"
+                               Text="Summary"
+                               HorizontalAlignment="Center"
+                               Margin="0,0,0,20" />
+                    <UniformGrid Columns="4">
+                        <materialDesign:Card Margin="8">
+                            <StackPanel Margin="15">
+                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
+                                           Text="CASES"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LatencyCaseCountText"
+                                           Style="{StaticResource MaterialDesignBody1TextBlock}"
+                                           Text="-"
+                                           FontSize="22"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,5,0,0" />
+                            </StackPanel>
+                        </materialDesign:Card>
+
+                        <materialDesign:Card Margin="8">
+                            <StackPanel Margin="15">
+                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
+                                           Text="AVERAGE"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LatencyAverageText"
+                                           Style="{StaticResource MaterialDesignBody1TextBlock}"
+                                           Text="- ms"
+                                           FontSize="22"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,5,0,0" />
+                            </StackPanel>
+                        </materialDesign:Card>
+
+                        <materialDesign:Card Margin="8">
+                            <StackPanel Margin="15">
+                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
+                                           Text="MIN"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LatencyMinText"
+                                           Style="{StaticResource MaterialDesignBody1TextBlock}"
+                                           Text="- ms"
+                                           FontSize="22"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,5,0,0" />
+                            </StackPanel>
+                        </materialDesign:Card>
+
+                        <materialDesign:Card Margin="8">
+                            <StackPanel Margin="15">
+                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
+                                           Text="MAX"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LatencyMaxText"
+                                           Style="{StaticResource MaterialDesignBody1TextBlock}"
+                                           Text="- ms"
+                                           FontSize="22"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,5,0,0" />
+                            </StackPanel>
+                        </materialDesign:Card>
+                    </UniformGrid>
+                </StackPanel>
+            </materialDesign:Card>
+        </StackPanel>
+    </ScrollViewer>
+</Window>

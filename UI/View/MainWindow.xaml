@@ -1,4 +1,4 @@
-﻿<Window x:Class="UI.View.MainWindow"
+<Window x:Class="UI.View.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -33,6 +33,13 @@
                         ToolTip="About">
                     <materialDesign:PackIcon
                         Kind="Information" />
+                </Button>
+
+                <Button DockPanel.Dock="Right"
+                        Style="{StaticResource MaterialDesignIconForegroundButton}"
+                        Click="OpenLatencyTest_Click"
+                        ToolTip="Latency Test">
+                    <materialDesign:PackIcon Kind="Timer" />
                 </Button>
 
                 <TextBlock
