@@ -1,511 +1,518 @@
 <Window x:Class="UI.View.LatencyTestWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
-        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
-        TextElement.FontWeight="ExtraLight"
-        TextElement.FontSize="12"
-        TextOptions.TextFormattingMode="Ideal"
-        TextOptions.TextRenderingMode="Auto"
-        Background="{DynamicResource MaterialDesignPaper}"
-        FontFamily="{DynamicResource MaterialDesignFont}"
-        WindowStartupLocation="CenterOwner"
-        Title="Latency Test"
-        Width="1450"
-        Height="900">
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
-                  VerticalScrollBarVisibility="Auto">
-        <StackPanel Orientation="Vertical">
-            <DockPanel>
-                <Button DockPanel.Dock="Left"
-                        Style="{StaticResource MaterialDesignIconForegroundButton}"
-                        Command="{Binding ShowAboutWindowCommand}"
-                        ToolTip="About">
-                    <materialDesign:PackIcon Kind="Information" />
-                </Button>
+        mc:Ignorable="d"
+        Title="Evaluation Latency"
+        Height="900"
+        Width="1500"
+        MinHeight="700"
+        MinWidth="1100"
+        Background="#2F2F2F"
+        Foreground="White">
 
-                <TextBlock Style="{StaticResource MaterialDesignHeadline2TextBlock}"
-                           Text="Test - Latency"
-                           Margin="10"
-                           HorizontalAlignment="Center" />
-            </DockPanel>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <Grid Margin="14">
+            <StackPanel>
 
-            <materialDesign:Card materialDesign:ElevationAssist.Elevation="Dp16"
-                                 UniformCornerRadius="15"
-                                 Margin="10"
-                                 Padding="15">
-                <StackPanel>
-                    <TextBlock Style="{StaticResource MaterialDesignHeadline4TextBlock}"
-                               Text="Latency Evaluation"
-                               HorizontalAlignment="Center"
-                               Margin="10,5,10,10" />
-                    <TextBlock Style="{StaticResource MaterialDesignBody1TextBlock}"
-                               Text="Primary scientific metric: ensemble model inference time for the complete frontal + lateral case across all selected folds. Image loading/preprocessing and WPF/HTTP overhead are excluded. CUDA runs use CUDA events with explicit synchronization. End-to-end application latency is kept separately as an engineering metric."
-                               HorizontalAlignment="Center"
-                               TextAlignment="Center"
-                               TextWrapping="Wrap"
-                               Margin="20,0,20,10" />
-                </StackPanel>
-            </materialDesign:Card>
+                <!-- Header -->
+                <TextBlock Text="Evaluation Latency"
+                           FontSize="34"
+                           FontWeight="Light"
+                           HorizontalAlignment="Center"
+                           Margin="0,8,0,18" />
 
-            <materialDesign:Card UniformCornerRadius="15"
-                                 Margin="10"
-                                 Padding="20">
-                <StackPanel>
-                    <TextBlock Style="{StaticResource MaterialDesignHeadline4TextBlock}"
-                               Text="Test Configuration"
-                               HorizontalAlignment="Center"
-                               Margin="0,0,0,20" />
+                <!-- Test Configuration -->
+                <Border Background="#454545"
+                        CornerRadius="14"
+                        Padding="18"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Test Configuration"
+                                   FontSize="24"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,18" />
 
-                    <TextBlock Style="{StaticResource MaterialDesignBody1TextBlock}"
-                               Text="Model Folder"
-                               HorizontalAlignment="Center"
-                               Margin="0,5,0,5" />
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="20" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
 
-                    <materialDesign:Badged HorizontalAlignment="Center"
-                                           Margin="20,5,20,0"
-                                           Badge="{Binding ModelSelectionFolderBadge}"
-                                           BadgeColorZoneMode="SecondaryMid">
-                        <Button Command="{Binding BrowseModelFolderCommand}">Select Model Folder</Button>
-                    </materialDesign:Badged>
+                            <!-- Model Folder -->
+                            <Border Grid.Column="0"
+                                    Background="#3B3B3B"
+                                    CornerRadius="12"
+                                    Padding="16">
+                                <StackPanel>
+                                    <TextBlock Text="Model Folder"
+                                               FontSize="18"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,0,0,10" />
 
-                    <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
-                               Text="{Binding ModelSelectionFolder}"
-                               IsEnabled="False"
-                               HorizontalAlignment="Center"
-                               TextAlignment="Center"
-                               TextWrapping="Wrap"
-                               Margin="20,10,20,20" />
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Center"
+                                                Margin="0,0,0,8">
+                                        <Button Command="{Binding BrowseModelFolderCommand}"
+                                                Padding="16,8"
+                                                Margin="0,0,8,0"
+                                                Background="#FFC107"
+                                                Foreground="Black"
+                                                BorderBrush="#FFC107"
+                                                FontWeight="SemiBold"
+                                                Cursor="Hand">
+                                            <StackPanel Orientation="Horizontal">
+                                                <materialDesign:PackIcon Kind="FolderSearch"
+                                                                         Width="18"
+                                                                         Height="18"
+                                                                         Margin="0,0,6,0" />
+                                                <TextBlock Text="Select Model Folder" />
+                                            </StackPanel>
+                                        </Button>
 
-                    <Separator Margin="20,5,20,20" />
+                                        <materialDesign:PackIcon Kind="{Binding ModelSelectionFolderBadge.Kind}"
+                                                                 Width="22"
+                                                                 Height="22"
+                                                                 VerticalAlignment="Center"
+                                                                 Foreground="#FFB000" />
+                                    </StackPanel>
 
-                    <TextBlock Style="{StaticResource MaterialDesignBody1TextBlock}"
-                               Text="Dataset Folder"
-                               HorizontalAlignment="Center"
-                               Margin="0,5,0,5" />
+                                    <TextBlock Text="{Binding ModelSelectionFolder}"
+                                               TextWrapping="Wrap"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center"
+                                               FontSize="11"
+                                               Foreground="#E0E0E0" />
+                                </StackPanel>
+                            </Border>
 
-                    <Button HorizontalAlignment="Center"
-                            Margin="20,5,20,0"
-                            Padding="20,6"
-                            Click="SelectLatencyDataset_Click">
-                        <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="FolderOpen"
-                                                     Width="20"
-                                                     Height="20"
-                                                     Margin="0,0,8,0" />
-                            <TextBlock Text="Select Dataset Folder"
-                                       VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
+                            <!-- Dataset Folder -->
+                            <Border Grid.Column="2"
+                                    Background="#3B3B3B"
+                                    CornerRadius="12"
+                                    Padding="16">
+                                <StackPanel>
+                                    <TextBlock Text="Dataset Folder"
+                                               FontSize="18"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,0,0,10" />
 
-                    <TextBlock x:Name="LatencyDatasetPathText"
-                               Style="{StaticResource MaterialDesignOverlineTextBlock}"
-                               Text="No dataset folder selected"
-                               HorizontalAlignment="Center"
-                               TextAlignment="Center"
-                               TextWrapping="Wrap"
-                               Margin="20,10,20,5" />
+                                    <Button Click="SelectLatencyDataset_Click"
+                                            Padding="16,8"
+                                            HorizontalAlignment="Center"
+                                            Margin="0,0,0,8"
+                                            Background="#FFC107"
+                                            Foreground="Black"
+                                            BorderBrush="#FFC107"
+                                            FontWeight="SemiBold"
+                                            Cursor="Hand">
+                                        <StackPanel Orientation="Horizontal">
+                                            <materialDesign:PackIcon Kind="FolderOpen"
+                                                                     Width="18"
+                                                                     Height="18"
+                                                                     Margin="0,0,6,0" />
+                                            <TextBlock Text="Select Dataset Folder" />
+                                        </StackPanel>
+                                    </Button>
 
-                    <TextBlock Style="{StaticResource MaterialDesignCaptionTextBlock}"
-                               Text="The dataset folder is scanned for matching frontal (_C_) and lateral (_S_) NIfTI sequences."
-                               HorizontalAlignment="Center"
-                               TextAlignment="Center"
-                               TextWrapping="Wrap"
-                               Margin="20,0,20,20" />
+                                    <TextBlock x:Name="LatencyDatasetPathText"
+                                               Text=""
+                                               TextWrapping="Wrap"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center"
+                                               FontSize="11"
+                                               Foreground="#E0E0E0" />
 
-                    <Separator Margin="20,5,20,20" />
+                                    <TextBlock Text="The dataset folder is scanned for matching frontal (_C_) and lateral (_S_) NIfTI sequences."
+                                               TextWrapping="Wrap"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center"
+                                               Margin="0,8,0,0"
+                                               FontSize="11"
+                                               Foreground="#D9D9D9" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
 
-                    <Button x:Name="StartLatencyTestButton"
-                            HorizontalAlignment="Center"
-                            Margin="10"
-                            Padding="30,10"
-                            IsEnabled="False"
-                            Click="StartLatencyTestButton_Click"
-                            ToolTip="Select a dataset before starting the test">
-                        <StackPanel Orientation="Horizontal">
-                            <materialDesign:PackIcon Kind="Timer"
-                                                     Width="24"
-                                                     Height="24"
-                                                     Margin="0,0,10,0" />
-                            <TextBlock Text="START LATENCY TEST"
-                                       VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-            </materialDesign:Card>
-
-            <materialDesign:Card UniformCornerRadius="15"
-                                 Margin="10"
-                                 Padding="20">
-                <StackPanel>
-                    <TextBlock Style="{StaticResource MaterialDesignHeadline4TextBlock}"
-                               Text="Test Progress"
-                               HorizontalAlignment="Center"
-                               Margin="0,0,0,15" />
-                    <ProgressBar x:Name="LatencyProgressBar"
-                                 Minimum="0"
-                                 Maximum="100"
-                                 Value="0"
-                                 Height="8"
-                                 Margin="20,5,20,10" />
-                    <TextBlock x:Name="LatencyProgressText"
-                               Style="{StaticResource MaterialDesignCaptionTextBlock}"
-                               Text="Waiting to start"
-                               HorizontalAlignment="Center"
-                               TextAlignment="Center"
-                               Margin="10" />
-                </StackPanel>
-            </materialDesign:Card>
-
-            <!-- Primary paper-oriented result -->
-            <materialDesign:Card UniformCornerRadius="15"
-                                 Margin="10"
-                                 Padding="20">
-                <StackPanel>
-                    <TextBlock Style="{StaticResource MaterialDesignHeadline4TextBlock}"
-                               Text="Primary Result - Ensemble Inference"
-                               HorizontalAlignment="Center"
-                               Margin="0,0,0,8" />
-                    <TextBlock Style="{StaticResource MaterialDesignCaptionTextBlock}"
-                               Text="One row = one paired DSA case. The reported inference time is the sum of pure frontal + lateral model execution over all selected folds. It excludes image preprocessing, model transfer, HTTP communication and WPF overhead."
-                               HorizontalAlignment="Center"
-                               TextAlignment="Center"
-                               TextWrapping="Wrap"
-                               Margin="20,0,20,15" />
-
-                    <DataGrid x:Name="LatencyResultsGrid"
-                              AutoGenerateColumns="False"
-                              IsReadOnly="True"
-                              CanUserAddRows="False"
-                              CanUserDeleteRows="False"
-                              HeadersVisibility="Column"
-                              MinHeight="220"
-                              MaxHeight="360"
-                              Margin="5"
-                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                              ScrollViewer.HorizontalScrollBarVisibility="Auto">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Case"
-                                                Binding="{Binding CaseName}"
-                                                Width="2*" />
-                            <DataGridTextColumn Header="Classification"
-                                                Binding="{Binding Classification}"
-                                                Width="2*" />
-                            <DataGridTextColumn Header="Ensemble inference (ms)"
-                                                Binding="{Binding BackendInferenceMilliseconds}"
-                                                Width="1.4*" />
-                            <DataGridTextColumn Header="Execution"
-                                                Binding="{Binding ExecutionProvider}"
-                                                Width="*" />
-                            <DataGridTextColumn Header="Device"
-                                                Binding="{Binding TimingDevice}"
-                                                Width="*" />
-                            <DataGridTextColumn Header="Status"
-                                                Binding="{Binding Status}"
-                                                Width="*" />
-                        </DataGrid.Columns>
-                    </DataGrid>
-
-                    <TextBlock Style="{StaticResource MaterialDesignBody1TextBlock}"
-                               FontSize="18"
-                               Text="Ensemble Inference Summary"
-                               HorizontalAlignment="Center"
-                               Margin="0,18,0,5" />
-
-                    <UniformGrid Columns="5">
-                        <materialDesign:Card Margin="5">
-                            <StackPanel Margin="10">
-                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
-                                           Text="CASES"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock x:Name="LatencyCaseCountText"
-                                           Text="0"
-                                           FontSize="20"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,4,0,0" />
+                        <Button x:Name="StartLatencyTestButton"
+                                Click="StartLatencyTestButton_Click"
+                                HorizontalAlignment="Center"
+                                Padding="22,10"
+                                Background="#FFC107"
+                                Foreground="Black"
+                                BorderBrush="#FFC107"
+                                FontWeight="Bold"
+                                Cursor="Hand"
+                                ToolTip="Start latency test">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="Play"
+                                                         Width="18"
+                                                         Height="18"
+                                                         Margin="0,0,6,0" />
+                                <TextBlock Text="START LATENCY TEST" />
                             </StackPanel>
-                        </materialDesign:Card>
-                        <materialDesign:Card Margin="5">
-                            <StackPanel Margin="10">
-                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
-                                           Text="MEAN INFERENCE"
+                        </Button>
+                    </StackPanel>
+                </Border>
+
+                <!-- Test Progress -->
+                <Border Background="#454545"
+                        CornerRadius="14"
+                        Padding="18"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Test Progress"
+                                   FontSize="24"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,14" />
+
+                        <ProgressBar x:Name="LatencyProgressBar"
+                                     Height="8"
+                                     Minimum="0"
+                                     Maximum="100"
+                                     Value="0"
+                                     Margin="0,0,0,10" />
+
+                        <TextBlock x:Name="LatencyProgressText"
+                                   Text="Select a dataset and start the test."
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"
+                                   Foreground="#E6E6E6" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Primary Result -->
+                <Border Background="#454545"
+                        CornerRadius="14"
+                        Padding="18"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Primary Result - Ensemble Inference"
+                                   FontSize="24"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,8" />
+
+                        <TextBlock Text="One row = one paired DSA case. The reported inference time is the sum of pure frontal + lateral model execution over all selected folds."
+                                   TextWrapping="Wrap"
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="#E0E0E0"
+                                   Margin="0,0,0,14" />
+
+                        <DataGrid x:Name="LatencyResultsGrid"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  IsReadOnly="True"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  AlternationCount="2"
+                                  RowBackground="#313131"
+                                  AlternatingRowBackground="#383838"
+                                  Background="#2C2C2C"
+                                  Foreground="White"
+                                  BorderBrush="#5A5A5A"
+                                  MinHeight="240">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Case"
+                                                    Binding="{Binding CaseName}"
+                                                    Width="2*" />
+                                <DataGridTextColumn Header="Classification"
+                                                    Binding="{Binding Classification}"
+                                                    Width="2*" />
+                                <DataGridTextColumn Header="Ensemble inference (ms)"
+                                                    Binding="{Binding BackendInferenceMilliseconds}"
+                                                    Width="1.5*" />
+                                <DataGridTextColumn Header="Execution"
+                                                    Binding="{Binding ExecutionProvider}"
+                                                    Width="*" />
+                                <DataGridTextColumn Header="Device"
+                                                    Binding="{Binding TimingDevice}"
+                                                    Width="*" />
+                                <DataGridTextColumn Header="Status"
+                                                    Binding="{Binding Status}"
+                                                    Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <TextBlock Text="Ensemble Inference Summary"
+                                   FontSize="18"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,14,0,10" />
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="2*" />
+                                <ColumnDefinition Width="2*" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                <TextBlock Text="MEAN INFERENCE"
+                                           FontSize="11"
+                                           Foreground="#D9D9D9"
                                            HorizontalAlignment="Center" />
                                 <TextBlock x:Name="LatencyAverageText"
                                            Text="- ms"
-                                           FontSize="20"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,4,0,0" />
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" />
                             </StackPanel>
-                        </materialDesign:Card>
-                        <materialDesign:Card Margin="5">
-                            <StackPanel Margin="10">
-                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
-                                           Text="MIN"
+
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                                <TextBlock Text="MIN"
+                                           FontSize="11"
+                                           Foreground="#D9D9D9"
                                            HorizontalAlignment="Center" />
                                 <TextBlock x:Name="LatencyMinText"
                                            Text="- ms"
-                                           FontSize="20"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,4,0,0" />
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" />
                             </StackPanel>
-                        </materialDesign:Card>
-                        <materialDesign:Card Margin="5">
-                            <StackPanel Margin="10">
-                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
-                                           Text="MAX"
+
+                            <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                                <TextBlock Text="MAX"
+                                           FontSize="11"
+                                           Foreground="#D9D9D9"
                                            HorizontalAlignment="Center" />
                                 <TextBlock x:Name="LatencyMaxText"
                                            Text="- ms"
-                                           FontSize="20"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,4,0,0" />
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" />
                             </StackPanel>
-                        </materialDesign:Card>
-                        <materialDesign:Card Margin="5">
-                            <StackPanel Margin="10">
-                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
-                                           Text="EXECUTION / DEVICE"
+
+                            <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                                <TextBlock Text="EXECUTION / DEVICE"
+                                           FontSize="11"
+                                           Foreground="#D9D9D9"
                                            HorizontalAlignment="Center" />
                                 <TextBlock x:Name="ExecutionSummaryText"
                                            Text="-"
-                                           FontSize="18"
-                                           HorizontalAlignment="Center"
-                                           TextAlignment="Center"
                                            TextWrapping="Wrap"
-                                           Margin="0,4,0,0" />
-                            </StackPanel>
-                        </materialDesign:Card>
-                    </UniformGrid>
-
-                    <TextBlock x:Name="TimingMethodSummaryText"
-                               Style="{StaticResource MaterialDesignCaptionTextBlock}"
-                               Text="Timing method: -"
-                               HorizontalAlignment="Center"
-                               TextAlignment="Center"
-                               Margin="10,8,10,0" />
-                </StackPanel>
-            </materialDesign:Card>
-
-            <!-- Secondary engineering metric -->
-            <materialDesign:Card UniformCornerRadius="15"
-                                 Margin="10"
-                                 Padding="20">
-                <StackPanel>
-                    <TextBlock Style="{StaticResource MaterialDesignHeadline4TextBlock}"
-                               Text="Engineering Metric - End-to-End Application Latency"
-                               HorizontalAlignment="Center"
-                               Margin="0,0,0,8" />
-                    <TextBlock Style="{StaticResource MaterialDesignCaptionTextBlock}"
-                               Text="Secondary metric only. Measures the WPF client classification path across all folds after image preparation, including HTTP requests, Flask/backend overhead, model transfer and serialization."
-                               HorizontalAlignment="Center"
-                               TextAlignment="Center"
-                               TextWrapping="Wrap"
-                               Margin="20,0,20,15" />
-
-                    <UniformGrid Columns="3">
-                        <materialDesign:Card Margin="8">
-                            <StackPanel Margin="15">
-                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
-                                           Text="MEAN END-TO-END"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock x:Name="EndToEndAverageText"
-                                           Text="- ms"
-                                           FontSize="22"
                                            HorizontalAlignment="Center"
-                                           Margin="0,5,0,0" />
+                                           TextAlignment="Center" />
                             </StackPanel>
-                        </materialDesign:Card>
-                        <materialDesign:Card Margin="8">
-                            <StackPanel Margin="15">
-                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
-                                           Text="MIN END-TO-END"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock x:Name="EndToEndMinText"
-                                           Text="- ms"
-                                           FontSize="22"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,5,0,0" />
-                            </StackPanel>
-                        </materialDesign:Card>
-                        <materialDesign:Card Margin="8">
-                            <StackPanel Margin="15">
-                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
-                                           Text="MAX END-TO-END"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock x:Name="EndToEndMaxText"
-                                           Text="- ms"
-                                           FontSize="22"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,5,0,0" />
-                            </StackPanel>
-                        </materialDesign:Card>
-                    </UniformGrid>
-                </StackPanel>
-            </materialDesign:Card>
 
-            <!-- Detailed diagnostics are collapsed by default to keep the main results readable. -->
-            <materialDesign:Card UniformCornerRadius="15"
-                                 Margin="10"
-                                 Padding="20">
-                <Expander Header="Detailed Per-Fold Timing (optional)"
-                          IsExpanded="False">
-                    <StackPanel Margin="0,15,0,0">
-                        <TextBlock Style="{StaticResource MaterialDesignCaptionTextBlock}"
-                                   Text="Diagnostic detail only. Each row is one DSA sequence processed by one fold. CPU/GPU and device are shown per row."
+                            <StackPanel Grid.Column="4" HorizontalAlignment="Center">
+                                <TextBlock Text="TIMING METHOD"
+                                           FontSize="11"
+                                           Foreground="#D9D9D9"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock x:Name="TimingMethodSummaryText"
+                                           Text="Timing method: -"
+                                           TextWrapping="Wrap"
+                                           HorizontalAlignment="Center"
+                                           TextAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Frontal -->
+                <Border Background="#454545"
+                        CornerRadius="14"
+                        Padding="18"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Frontal Per-Fold Timings"
+                                   FontSize="24"
                                    HorizontalAlignment="Center"
-                                   TextAlignment="Center"
-                                   TextWrapping="Wrap"
-                                   Margin="10,0,10,15" />
+                                   Margin="0,0,0,10" />
 
-                        <TextBlock Style="{StaticResource MaterialDesignBody1TextBlock}" FontSize="22"
-                                   Text="Frontal View - Per Case / Per Fold"
-                                   HorizontalAlignment="Center"
-                                   Margin="0,5,0,5" />
                         <TextBlock x:Name="FrontalLatencyStatusText"
-                                   Style="{StaticResource MaterialDesignCaptionTextBlock}"
                                    Text="Run the test to collect frontal per-case / per-fold timings."
+                                   TextWrapping="Wrap"
                                    HorizontalAlignment="Center"
                                    TextAlignment="Center"
-                                   TextWrapping="Wrap"
-                                   Margin="10,0,10,8" />
+                                   Foreground="#E6E6E6"
+                                   Margin="0,0,0,12" />
+
                         <DataGrid x:Name="FrontalLatencyGrid"
                                   AutoGenerateColumns="False"
-                                  IsReadOnly="True"
                                   CanUserAddRows="False"
                                   CanUserDeleteRows="False"
+                                  IsReadOnly="True"
                                   HeadersVisibility="Column"
-                                  Height="260"
-                                  Margin="5"
-                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                  GridLinesVisibility="Horizontal"
+                                  RowBackground="#313131"
+                                  AlternatingRowBackground="#383838"
+                                  Background="#2C2C2C"
+                                  Foreground="White"
+                                  BorderBrush="#5A5A5A"
+                                  MinHeight="210">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Case / Data"
+                                <DataGridTextColumn Header="Case"
                                                     Binding="{Binding CaseName}"
                                                     Width="2*" />
                                 <DataGridTextColumn Header="Model / Fold"
                                                     Binding="{Binding ModelName}"
-                                                    Width="*" />
+                                                    Width="2*" />
                                 <DataGridTextColumn Header="Frontal inference (ms)"
-                                                    Binding="{Binding LatencyMilliseconds, StringFormat=F2}"
-                                                    Width="1.3*" />
+                                                    Binding="{Binding LatencyMilliseconds}"
+                                                    Width="1.5*" />
                                 <DataGridTextColumn Header="Execution"
                                                     Binding="{Binding ExecutionProvider}"
                                                     Width="*" />
                                 <DataGridTextColumn Header="Device"
                                                     Binding="{Binding TimingDevice}"
                                                     Width="*" />
+                                <DataGridTextColumn Header="Status"
+                                                    Binding="{Binding Status}"
+                                                    Width="*" />
                             </DataGrid.Columns>
                         </DataGrid>
 
-                        <UniformGrid Columns="5" Margin="0,0,0,20">
-                            <materialDesign:Card Margin="5"><StackPanel Margin="10"><TextBlock Text="SEQUENCES" HorizontalAlignment="Center"/><TextBlock x:Name="FrontalSequenceCountText" Text="0" FontSize="18" HorizontalAlignment="Center"/></StackPanel></materialDesign:Card>
-                            <materialDesign:Card Margin="5"><StackPanel Margin="10"><TextBlock Text="MEASUREMENTS" HorizontalAlignment="Center"/><TextBlock x:Name="FrontalMeasurementCountText" Text="0" FontSize="18" HorizontalAlignment="Center"/></StackPanel></materialDesign:Card>
-                            <materialDesign:Card Margin="5"><StackPanel Margin="10"><TextBlock Text="MIN" HorizontalAlignment="Center"/><TextBlock x:Name="FrontalMinText" Text="- ms" FontSize="18" HorizontalAlignment="Center"/></StackPanel></materialDesign:Card>
-                            <materialDesign:Card Margin="5"><StackPanel Margin="10"><TextBlock Text="AVERAGE" HorizontalAlignment="Center"/><TextBlock x:Name="FrontalAverageText" Text="- ms" FontSize="18" HorizontalAlignment="Center"/></StackPanel></materialDesign:Card>
-                            <materialDesign:Card Margin="5"><StackPanel Margin="10"><TextBlock Text="MAX" HorizontalAlignment="Center"/><TextBlock x:Name="FrontalMaxText" Text="- ms" FontSize="18" HorizontalAlignment="Center"/></StackPanel></materialDesign:Card>
-                        </UniformGrid>
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
 
-                        <Separator Margin="15,5,15,20" />
+                            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                <TextBlock Text="SEQUENCES" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="FrontalSequenceCountText" Text="0" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
 
-                        <TextBlock Style="{StaticResource MaterialDesignBody1TextBlock}" FontSize="22"
-                                   Text="Lateral View - Per Case / Per Fold"
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                                <TextBlock Text="MEASUREMENTS" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="FrontalMeasurementCountText" Text="0" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                                <TextBlock Text="MIN" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="FrontalMinText" Text="- ms" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                                <TextBlock Text="MEAN" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="FrontalAverageText" Text="- ms" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="4" HorizontalAlignment="Center">
+                                <TextBlock Text="MAX" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="FrontalMaxText" Text="- ms" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Lateral -->
+                <Border Background="#454545"
+                        CornerRadius="14"
+                        Padding="18"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Lateral Per-Fold Timings"
+                                   FontSize="24"
                                    HorizontalAlignment="Center"
-                                   Margin="0,5,0,5" />
+                                   Margin="0,0,0,10" />
+
                         <TextBlock x:Name="LateralLatencyStatusText"
-                                   Style="{StaticResource MaterialDesignCaptionTextBlock}"
                                    Text="Run the test to collect lateral per-case / per-fold timings."
+                                   TextWrapping="Wrap"
                                    HorizontalAlignment="Center"
                                    TextAlignment="Center"
-                                   TextWrapping="Wrap"
-                                   Margin="10,0,10,8" />
+                                   Foreground="#E6E6E6"
+                                   Margin="0,0,0,12" />
+
                         <DataGrid x:Name="LateralLatencyGrid"
                                   AutoGenerateColumns="False"
-                                  IsReadOnly="True"
                                   CanUserAddRows="False"
                                   CanUserDeleteRows="False"
+                                  IsReadOnly="True"
                                   HeadersVisibility="Column"
-                                  Height="260"
-                                  Margin="5"
-                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                  ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                  GridLinesVisibility="Horizontal"
+                                  RowBackground="#313131"
+                                  AlternatingRowBackground="#383838"
+                                  Background="#2C2C2C"
+                                  Foreground="White"
+                                  BorderBrush="#5A5A5A"
+                                  MinHeight="210">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Case / Data"
+                                <DataGridTextColumn Header="Case"
                                                     Binding="{Binding CaseName}"
                                                     Width="2*" />
                                 <DataGridTextColumn Header="Model / Fold"
                                                     Binding="{Binding ModelName}"
-                                                    Width="*" />
+                                                    Width="2*" />
                                 <DataGridTextColumn Header="Lateral inference (ms)"
-                                                    Binding="{Binding LatencyMilliseconds, StringFormat=F2}"
-                                                    Width="1.3*" />
+                                                    Binding="{Binding LatencyMilliseconds}"
+                                                    Width="1.5*" />
                                 <DataGridTextColumn Header="Execution"
                                                     Binding="{Binding ExecutionProvider}"
                                                     Width="*" />
                                 <DataGridTextColumn Header="Device"
                                                     Binding="{Binding TimingDevice}"
                                                     Width="*" />
+                                <DataGridTextColumn Header="Status"
+                                                    Binding="{Binding Status}"
+                                                    Width="*" />
                             </DataGrid.Columns>
                         </DataGrid>
 
-                        <UniformGrid Columns="5">
-                            <materialDesign:Card Margin="5"><StackPanel Margin="10"><TextBlock Text="SEQUENCES" HorizontalAlignment="Center"/><TextBlock x:Name="LateralSequenceCountText" Text="0" FontSize="18" HorizontalAlignment="Center"/></StackPanel></materialDesign:Card>
-                            <materialDesign:Card Margin="5"><StackPanel Margin="10"><TextBlock Text="MEASUREMENTS" HorizontalAlignment="Center"/><TextBlock x:Name="LateralMeasurementCountText" Text="0" FontSize="18" HorizontalAlignment="Center"/></StackPanel></materialDesign:Card>
-                            <materialDesign:Card Margin="5"><StackPanel Margin="10"><TextBlock Text="MIN" HorizontalAlignment="Center"/><TextBlock x:Name="LateralMinText" Text="- ms" FontSize="18" HorizontalAlignment="Center"/></StackPanel></materialDesign:Card>
-                            <materialDesign:Card Margin="5"><StackPanel Margin="10"><TextBlock Text="AVERAGE" HorizontalAlignment="Center"/><TextBlock x:Name="LateralAverageText" Text="- ms" FontSize="18" HorizontalAlignment="Center"/></StackPanel></materialDesign:Card>
-                            <materialDesign:Card Margin="5"><StackPanel Margin="10"><TextBlock Text="MAX" HorizontalAlignment="Center"/><TextBlock x:Name="LateralMaxText" Text="- ms" FontSize="18" HorizontalAlignment="Center"/></StackPanel></materialDesign:Card>
-                        </UniformGrid>
-                    </StackPanel>
-                </Expander>
-            </materialDesign:Card>
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
 
-            <materialDesign:Card UniformCornerRadius="15"
-                                 Margin="10"
-                                 Padding="20">
-                <StackPanel>
-                    <TextBlock Style="{StaticResource MaterialDesignHeadline4TextBlock}"
-                               Text="Dataset / Test Totals"
-                               HorizontalAlignment="Center"
-                               Margin="0,0,0,15" />
-                    <UniformGrid Columns="3">
-                        <materialDesign:Card Margin="8">
-                            <StackPanel Margin="15">
-                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
-                                           Text="TOTAL DSA SEQUENCES"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock x:Name="TotalSelectedSequenceText"
-                                           Text="0"
-                                           FontSize="22"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,5,0,0" />
+                            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                <TextBlock Text="SEQUENCES" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LateralSequenceCountText" Text="0" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </StackPanel>
-                        </materialDesign:Card>
-                        <materialDesign:Card Margin="8">
-                            <StackPanel Margin="15">
-                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
-                                           Text="MODELS / FOLDS"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock x:Name="TotalModelCountText"
-                                           Text="-"
-                                           FontSize="22"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,5,0,0" />
+
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                                <TextBlock Text="MEASUREMENTS" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LateralMeasurementCountText" Text="0" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </StackPanel>
-                        </materialDesign:Card>
-                        <materialDesign:Card Margin="8">
-                            <StackPanel Margin="15">
-                                <TextBlock Style="{StaticResource MaterialDesignOverlineTextBlock}"
-                                           Text="DETAILED VIEW-FOLD MEASUREMENTS"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock x:Name="TotalViewMeasurementText"
-                                           Text="0"
-                                           FontSize="22"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,5,0,0" />
+
+                            <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                                <TextBlock Text="MIN" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LateralMinText" Text="- ms" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
                             </StackPanel>
-                        </materialDesign:Card>
-                    </UniformGrid>
+
+                            <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                                <TextBlock Text="MEAN" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LateralAverageText" Text="- ms" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="4" HorizontalAlignment="Center">
+                                <TextBlock Text="MAX" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LateralMaxText" Text="- ms" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Hidden placeholders kept only to avoid changing code-behind -->
+                <StackPanel Visibility="Collapsed">
+                    <TextBlock x:Name="EndToEndAverageText" Text="- ms" />
+                    <TextBlock x:Name="EndToEndMinText" Text="- ms" />
+                    <TextBlock x:Name="EndToEndMaxText" Text="- ms" />
+
+                    <TextBlock x:Name="LatencyCaseCountText" Text="0" />
+                    <TextBlock x:Name="TotalSelectedSequenceText" Text="0" />
+                    <TextBlock x:Name="TotalModelCountText" Text="0" />
+                    <TextBlock x:Name="TotalViewMeasurementText" Text="0" />
                 </StackPanel>
-            </materialDesign:Card>
-        </StackPanel>
+
+            </StackPanel>
+        </Grid>
     </ScrollViewer>
 </Window>
