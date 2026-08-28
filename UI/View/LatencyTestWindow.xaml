@@ -245,7 +245,7 @@
                                    HorizontalAlignment="Center"
                                    Margin="0,0,0,8" />
 
-                        <TextBlock Text="One row = one paired DSA case. The reported inference time is the sum of pure frontal + lateral model execution over all selected folds."
+                        <TextBlock Text="One row = one paired DSA case. The reported inference time is the sum of the original thesis model execution path for frontal + lateral across the five folds."
                                    TextWrapping="Wrap"
                                    HorizontalAlignment="Center"
                                    TextAlignment="Center"

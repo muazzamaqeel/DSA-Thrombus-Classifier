@@ -3,37 +3,32 @@ import time
 import torch
 
 
-@torch.no_grad()
 def run_timed_model(classificator, model, image):
-    """Measure one model execution without changing the normal Classificator code."""
+    """Time the existing thesis Classificator._run_model execution path.
+
+    The latency feature deliberately does not reimplement model execution.
+    Classificator._run_model remains responsible for:
+      - moving the selected model to the configured device,
+      - calling the original CNN-GRU forward pass,
+      - applying sigmoid and extracting the activation,
+      - clearing the CUDA cache, and
+      - moving the model back to CPU when CUDA is used.
+
+    This wrapper only measures how long that established application path takes.
+    """
     if classificator.run_on_cuda:
-        # Model movement is intentionally outside the scientific inference timer.
-        model.to(classificator.device)
-
+        # Prevent earlier asynchronous GPU work from leaking into this measurement.
         torch.cuda.synchronize(classificator.device)
-        start_event = torch.cuda.Event(enable_timing=True)
-        end_event = torch.cuda.Event(enable_timing=True)
 
-        start_event.record()
-        output = model(image)
-        activation_tensor = torch.sigmoid(output)
-        end_event.record()
+    start_time = time.perf_counter()
 
-        torch.cuda.synchronize(classificator.device)
-        inference_milliseconds = start_event.elapsed_time(end_event)
-        activation = activation_tensor.item()
-    else:
-        start_time = time.perf_counter()
-        output = model(image)
-        activation_tensor = torch.sigmoid(output)
-        activation = activation_tensor.item()
-        inference_milliseconds = (time.perf_counter() - start_time) * 1000.0
-
-    del output
-    del activation_tensor
-    torch.cuda.empty_cache()
+    # Reuse the ORIGINAL thesis inference function.
+    activation, _estimate = classificator._run_model(model, image)
 
     if classificator.run_on_cuda:
-        model.cpu()
+        # Ensure all work triggered by the original execution path is complete.
+        torch.cuda.synchronize(classificator.device)
+
+    inference_milliseconds = (time.perf_counter() - start_time) * 1000.0
 
     return activation, float(inference_milliseconds)

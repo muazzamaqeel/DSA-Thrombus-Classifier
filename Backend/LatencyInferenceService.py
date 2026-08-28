@@ -4,7 +4,7 @@ from LatencyTimer import run_timed_model
 
 
 class LatencyInferenceService:
-    """Latency-only classification logic built around the existing Classificator instance."""
+    """Latency-only orchestration that reuses the existing thesis Classificator instance."""
 
     def __init__(self, classificator):
         self._classificator = classificator
@@ -40,9 +40,7 @@ class LatencyInferenceService:
         execution_provider = (
             "GPU" if self._classificator.run_on_cuda else "CPU")
         timing_method = (
-            "CUDA events + synchronize"
-            if self._classificator.run_on_cuda
-            else "time.perf_counter")
+            "time.perf_counter around original Classificator._run_model")
 
         return {
             "OutputFrontal": [frontal_activation],
