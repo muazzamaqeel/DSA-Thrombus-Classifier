@@ -72,6 +72,13 @@ public partial class LatencyTestWindow : Window
     // 2. VALIDATE + START
     // ---------------------------------------------------------------------
 
+    private void StartLatencyTestSurface_MouseLeftButtonUp(
+        object sender,
+        MouseButtonEventArgs e)
+    {
+        StartLatencyTestButton_Click(sender, e);
+    }
+
     private async void StartLatencyTestButton_Click(
         object sender,
         RoutedEventArgs e)
