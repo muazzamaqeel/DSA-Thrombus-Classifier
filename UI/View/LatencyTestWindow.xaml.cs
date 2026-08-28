@@ -12,6 +12,15 @@ namespace UI.View;
 
 public partial class LatencyTestWindow : Window
 {
+    private static readonly string[] PaperFoldModelNames =
+    {
+        "fold1.pt",
+        "fold2.pt",
+        "fold3.pt",
+        "fold4.pt",
+        "fold5.pt"
+    };
+
     private readonly LatencyDatasetScanner _datasetScanner = new();
     private readonly LatencyTestRunner _runner = new();
 
@@ -84,7 +93,7 @@ public partial class LatencyTestWindow : Window
         RoutedEventArgs e)
     {
         if (!TryCreateRunConfiguration(
-                out var vm,
+                out _,
                 out var modelNames))
         {
             return;
@@ -112,7 +121,7 @@ public partial class LatencyTestWindow : Window
                 var result = await _runner.RunCaseAsync(
                     latencyCase,
                     modelNames,
-                    vm.AiClassificationThreshold,
+                    LatencyThresholdSlider.Value,
                     OnFoldCompleted);
 
                 ApplySuccessfulCaseResult(
@@ -199,37 +208,68 @@ public partial class LatencyTestWindow : Window
             vm.ModelSelectionFolder,
             "frontal");
 
-        if (!Directory.Exists(frontalModelFolder))
+        var lateralModelFolder = Path.Join(
+            vm.ModelSelectionFolder,
+            "lateral");
+
+        if (!Directory.Exists(frontalModelFolder) ||
+            !Directory.Exists(lateralModelFolder))
         {
             MessageBox.Show(
-                "The frontal model directory " +
-                "could not be found.",
+                "The selected model folder must contain both " +
+                "'frontal' and 'lateral' directories.",
                 "Latency Test",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             return false;
         }
 
-        modelNames = Directory
-            .GetFiles(frontalModelFolder)
-            .OrderBy(
-                path => Path.GetFileName(path),
-                StringComparer.OrdinalIgnoreCase)
-            .Select(path => Path.GetFileName(path))
+        var frontalModelNames = Directory
+            .GetFiles(frontalModelFolder, "*.pt")
+            .Select(Path.GetFileName)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Select(name => name!)
+            .OrderBy(
+                name => name,
+                StringComparer.Ordinal)
             .ToList();
 
-        if (modelNames.Count == 0)
+        var lateralModelNames = Directory
+            .GetFiles(lateralModelFolder, "*.pt")
+            .Select(Path.GetFileName)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name!)
+            .OrderBy(
+                name => name,
+                StringComparer.Ordinal)
+            .ToList();
+
+        var expectedPaperModels = PaperFoldModelNames
+            .OrderBy(
+                name => name,
+                StringComparer.Ordinal)
+            .ToList();
+
+        if (!frontalModelNames.SequenceEqual(
+                expectedPaperModels,
+                StringComparer.Ordinal) ||
+            !lateralModelNames.SequenceEqual(
+                expectedPaperModels,
+                StringComparer.Ordinal))
         {
             MessageBox.Show(
-                "No model files were found in " +
-                "the frontal model directory.",
-                "Latency Test",
+                "For exact paper reproduction, the frontal and lateral " +
+                "model folders must each contain exactly these five " +
+                "checkpoints:\n\n" +
+                string.Join("\n", PaperFoldModelNames) +
+                "\n\nNo additional .pt checkpoints are allowed.",
+                "Latency Test - Paper 5-Fold Configuration",
                 MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MessageBoxImage.Warning);
             return false;
         }
+
+        modelNames = PaperFoldModelNames.ToList();
 
         return true;
     }
