@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using Services.AiService;
 using Services.AiService.Interpreter;
 using Services.AiService.Responses;
 
@@ -27,101 +26,124 @@ public sealed class LatencyTestRunner
             onFoldCompleted = null)
     {
         // PREPARE:
-        // This deliberately happens before the end-to-end stopwatch.
-        await AiServiceCommunication.LoadImages(
+        // Reuses Classificator.prepare_images(), but the latency-only endpoint
+        // returns no preview-image JSON. This keeps large runs lighter.
+        await _latencyApiClient.PrepareImagesAsync(
             latencyCase.FrontalPath,
             latencyCase.LateralPath);
 
-        // MEASURE END-TO-END CLASSIFICATION PATH:
-        var caseStopwatch = Stopwatch.StartNew();
-
-        var responses = new List<ClassificationResponse>();
-        var backendInferenceTotalMilliseconds = 0.0;
-
-        var executionProvider = "-";
-        var timingDevice = "-";
-        var timingMethod = "-";
-
-        // MEASURE EVERY FOLD:
-        foreach (var modelName in modelNames)
+        try
         {
-            var response = await _latencyApiClient.ClassifyAsync(
-                modelName,
-                modelName,
-                latencyCase.FrontalPath,
-                latencyCase.LateralPath);
+            // MEASURE END-TO-END CLASSIFICATION PATH:
+            var caseStopwatch = Stopwatch.StartNew();
 
-            responses.Add(response);
-            backendInferenceTotalMilliseconds +=
-                response.InferenceMilliseconds;
+            var responses = new List<ClassificationResponse>();
+            var backendInferenceTotalMilliseconds = 0.0;
 
-            executionProvider =
-                NormalizeExecutionProvider(response);
-            timingDevice =
-                string.IsNullOrWhiteSpace(response.TimingDevice)
-                    ? "unknown"
-                    : response.TimingDevice;
-            timingMethod =
-                string.IsNullOrWhiteSpace(response.TimingMethod)
-                    ? "unknown"
-                    : response.TimingMethod;
+            var executionProvider = "-";
+            var timingDevice = "-";
+            var timingMethod = "-";
 
-            var frontalMeasurement =
-                new ViewLatencyMeasurement
-                {
-                    CaseName = latencyCase.CaseName,
-                    ModelName = modelName,
-                    LatencyMilliseconds =
-                        response.FrontalInferenceMilliseconds,
-                    ExecutionProvider = executionProvider,
-                    TimingDevice = timingDevice,
-                    TimingMethod = timingMethod,
-                    Status = "Complete"
-                };
+            // MEASURE EVERY FOLD SEQUENTIALLY.
+            // GPU inference is intentionally not parallelized because concurrent
+            // folds would contend for the GPU and corrupt latency comparability.
+            foreach (var modelName in modelNames)
+            {
+                var response = await _latencyApiClient.ClassifyAsync(
+                    modelName,
+                    modelName,
+                    latencyCase.FrontalPath,
+                    latencyCase.LateralPath);
 
-            var lateralMeasurement =
-                new ViewLatencyMeasurement
-                {
-                    CaseName = latencyCase.CaseName,
-                    ModelName = modelName,
-                    LatencyMilliseconds =
-                        response.LateralInferenceMilliseconds,
-                    ExecutionProvider = executionProvider,
-                    TimingDevice = timingDevice,
-                    TimingMethod = timingMethod,
-                    Status = "Complete"
-                };
+                responses.Add(response);
+                backendInferenceTotalMilliseconds +=
+                    response.InferenceMilliseconds;
 
-            onFoldCompleted?.Invoke(
-                frontalMeasurement,
-                lateralMeasurement);
+                executionProvider =
+                    NormalizeExecutionProvider(response);
+                timingDevice =
+                    string.IsNullOrWhiteSpace(response.TimingDevice)
+                        ? "unknown"
+                        : response.TimingDevice;
+                timingMethod =
+                    string.IsNullOrWhiteSpace(response.TimingMethod)
+                        ? "unknown"
+                        : response.TimingMethod;
+
+                var frontalMeasurement =
+                    new ViewLatencyMeasurement
+                    {
+                        CaseName = latencyCase.CaseName,
+                        ModelName = modelName,
+                        LatencyMilliseconds =
+                            response.FrontalInferenceMilliseconds,
+                        ExecutionProvider = executionProvider,
+                        TimingDevice = timingDevice,
+                        TimingMethod = timingMethod,
+                        Status = "Complete"
+                    };
+
+                var lateralMeasurement =
+                    new ViewLatencyMeasurement
+                    {
+                        CaseName = latencyCase.CaseName,
+                        ModelName = modelName,
+                        LatencyMilliseconds =
+                            response.LateralInferenceMilliseconds,
+                        ExecutionProvider = executionProvider,
+                        TimingDevice = timingDevice,
+                        TimingMethod = timingMethod,
+                        Status = "Complete"
+                    };
+
+                onFoldCompleted?.Invoke(
+                    frontalMeasurement,
+                    lateralMeasurement);
+            }
+
+            // AGGREGATE:
+            // Reuse the ORIGINAL thesis result interpreter.
+            var averages =
+                ResultInterpreter.CalculateCombinedResult(responses);
+
+            var resultInterpreter = new ResultInterpreter
+            {
+                Threshold = classificationThreshold
+            };
+
+            var hasThrombus =
+                resultInterpreter.HasThrombus(averages.Item1);
+
+            caseStopwatch.Stop();
+
+            return new LatencyCaseRunResult
+            {
+                HasThrombus = hasThrombus,
+                EndToEndMilliseconds =
+                    caseStopwatch.Elapsed.TotalMilliseconds,
+                BackendInferenceMilliseconds =
+                    backendInferenceTotalMilliseconds,
+                ExecutionProvider = executionProvider,
+                TimingDevice = timingDevice,
+                TimingMethod = timingMethod
+            };
         }
-
-        // AGGREGATE:
-        var averages =
-            ResultInterpreter.CalculateCombinedResult(responses);
-
-        var resultInterpreter = new ResultInterpreter
+        finally
         {
-            Threshold = classificationThreshold
-        };
-
-        var hasThrombus =
-            resultInterpreter.HasThrombus(averages.Item1);
-
-        caseStopwatch.Stop();
-
-        return new LatencyCaseRunResult
-        {
-            HasThrombus = hasThrombus,
-            EndToEndMilliseconds =
-                caseStopwatch.Elapsed.TotalMilliseconds,
-            BackendInferenceMilliseconds =
-                backendInferenceTotalMilliseconds,
-            ExecutionProvider = executionProvider,
-            TimingDevice = timingDevice,
-            TimingMethod = timingMethod
-        };
+            // Critical for large datasets: the original Classificator cache has
+            // no built-in maximum size. Evict this case after its five folds.
+            try
+            {
+                await _latencyApiClient.ReleasePreparedImagesAsync(
+                    latencyCase.FrontalPath,
+                    latencyCase.LateralPath);
+            }
+            catch (Exception cleanupException)
+            {
+                Debug.WriteLine(
+                    $"Latency cache cleanup failed: {cleanupException.Message}");
+            }
+        }
     }
 
     private static string NormalizeExecutionProvider(

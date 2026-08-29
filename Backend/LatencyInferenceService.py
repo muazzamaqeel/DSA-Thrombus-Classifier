@@ -1,3 +1,5 @@
+import os
+
 import torch
 
 from LatencyTimer import run_timed_model
@@ -8,6 +10,23 @@ class LatencyInferenceService:
 
     def __init__(self, classificator):
         self._classificator = classificator
+
+    def prepare_images(self, image_f, image_l):
+        """Reuse the original thesis preprocessing without returning preview images."""
+        if (not image_f or not os.path.exists(image_f) or
+                not image_l or not os.path.exists(image_l)):
+            raise ValueError("At least one requested image path does not exist.")
+
+        # Reuse the ORIGINAL thesis preprocessing/cache implementation.
+        self._classificator.prepare_images(
+            image_f,
+            image_l,
+            False)
+
+    def release_images(self, image_f, image_l):
+        """Evict one processed case from the original prepared-image cache."""
+        image_key = hash(image_f + image_l)
+        return self._classificator.preparedImages.pop(image_key, None) is not None
 
     def classify(self, model_frontal_name, model_lateral_name, image_f, image_l):
         self._validate_request(
@@ -70,5 +89,4 @@ class LatencyInferenceService:
         image_key = hash(image_f + image_l)
         if image_key not in self._classificator.preparedImages:
             raise ValueError(
-                "Images must be prepared through /AiService/LoadImages "
-                "before latency classification.")
+                "Images must be prepared before latency classification.")

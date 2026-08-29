@@ -1,5 +1,5 @@
+using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace UI.LatencyTest;
 
@@ -8,18 +8,29 @@ public static class LatencyStatistics
     public static LatencyMetricSummary Calculate(
         IEnumerable<double> values)
     {
-        var collected = values.ToList();
+        var count = 0;
+        var sum = 0.0;
+        var min = double.PositiveInfinity;
+        var max = double.NegativeInfinity;
 
-        if (collected.Count == 0)
+        foreach (var value in values)
+        {
+            count++;
+            sum += value;
+            min = Math.Min(min, value);
+            max = Math.Max(max, value);
+        }
+
+        if (count == 0)
         {
             return new LatencyMetricSummary();
         }
 
         return new LatencyMetricSummary
         {
-            Mean = collected.Average(),
-            Min = collected.Min(),
-            Max = collected.Max()
+            Mean = sum / count,
+            Min = min,
+            Max = max
         };
     }
 }

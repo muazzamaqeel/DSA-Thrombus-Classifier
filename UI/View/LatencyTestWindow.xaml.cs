@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using MaterialDesignThemes.Wpf;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using UI.LatencyTest;
@@ -12,6 +15,11 @@ namespace UI.View;
 
 public partial class LatencyTestWindow : Window
 {
+    // Avoid repainting thousands of DataGrid rows after every fold/case.
+    // A refresh every 10 completed cases keeps the GUI responsive while the
+    // progress text/bar still update for every case.
+    private const int UiRefreshCaseInterval = 10;
+
     private static readonly string[] PaperFoldModelNames =
     {
         "fold1.pt",
@@ -24,11 +32,23 @@ public partial class LatencyTestWindow : Window
     private readonly LatencyDatasetScanner _datasetScanner = new();
     private readonly LatencyTestRunner _runner = new();
 
+    // Master result collections are never bound directly to WPF.
+    // This prevents WPF's CollectionView from observing a List while that
+    // same List is being changed between asynchronous fold requests.
     private readonly List<LatencyCase> _latencyCases = new();
     private readonly List<ViewLatencyMeasurement>
         _frontalLatencyMeasurements = new();
     private readonly List<ViewLatencyMeasurement>
         _lateralLatencyMeasurements = new();
+
+    // WPF receives changes only through ObservableCollection notifications.
+    // The per-fold rows are copied here in batches every N completed cases.
+    private readonly ObservableCollection<LatencyCase>
+        _latencyCaseRows = new();
+    private readonly ObservableCollection<ViewLatencyMeasurement>
+        _frontalLatencyRows = new();
+    private readonly ObservableCollection<ViewLatencyMeasurement>
+        _lateralLatencyRows = new();
 
     private int _modelCount;
 
@@ -39,11 +59,11 @@ public partial class LatencyTestWindow : Window
     {
         InitializeComponent();
 
-        LatencyResultsGrid.ItemsSource = _latencyCases;
+        LatencyResultsGrid.ItemsSource = _latencyCaseRows;
         FrontalLatencyGrid.ItemsSource =
-            _frontalLatencyMeasurements;
+            _frontalLatencyRows;
         LateralLatencyGrid.ItemsSource =
-            _lateralLatencyMeasurements;
+            _lateralLatencyRows;
 
         ResetViewLatencySummaries();
     }
@@ -52,7 +72,7 @@ public partial class LatencyTestWindow : Window
     // 1. CONFIGURE DATASET
     // ---------------------------------------------------------------------
 
-    private void SelectLatencyDataset_Click(
+    private async void SelectLatencyDataset_Click(
         object sender,
         RoutedEventArgs e)
     {
@@ -68,11 +88,24 @@ public partial class LatencyTestWindow : Window
             return;
         }
 
-        LatencyDatasetPathText.Text = dialog.FileName;
+        var datasetPath = dialog.FileName;
+
+        LatencyDatasetPathText.Text = datasetPath;
+        LatencyProgressText.Text = "Scanning dataset...";
+        StartLatencyTestButton.IsEnabled = false;
+
+        // File-system scanning/pair construction does not need the UI thread.
+        var scannedCases = await Task.Run(
+            () => _datasetScanner.Scan(datasetPath));
 
         _latencyCases.Clear();
-        _latencyCases.AddRange(
-            _datasetScanner.Scan(dialog.FileName));
+        _latencyCases.AddRange(scannedCases);
+
+        _latencyCaseRows.Clear();
+        foreach (var latencyCase in _latencyCases)
+        {
+            _latencyCaseRows.Add(latencyCase);
+        }
 
         ResetAfterDatasetScan();
     }
@@ -102,6 +135,7 @@ public partial class LatencyTestWindow : Window
         BeginRunUi(modelNames.Count);
 
         var completedCases = 0;
+        var failedMessages = new List<string>();
 
         // -----------------------------------------------------------------
         // 3. PROCESS CASES
@@ -113,8 +147,6 @@ public partial class LatencyTestWindow : Window
                 $"Processing {completedCases + 1} of " +
                 $"{_latencyCases.Count}: " +
                 latencyCase.CaseName;
-
-            LatencyResultsGrid.Items.Refresh();
 
             try
             {
@@ -132,13 +164,10 @@ public partial class LatencyTestWindow : Window
             {
                 ApplyFailedCaseResult(latencyCase);
 
-                MessageBox.Show(
-                    $"Classification failed for case " +
-                    $"{latencyCase.CaseName}.\n\n" +
-                    $"{exception.Message}",
-                    "Latency Test",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                // Do not block a long unattended run with one MessageBox
+                // per failed case. Collect the details and show one summary.
+                failedMessages.Add(
+                    $"{latencyCase.CaseName}: {exception.Message}");
             }
 
             completedCases++;
@@ -147,13 +176,47 @@ public partial class LatencyTestWindow : Window
                 ((double)completedCases /
                  _latencyCases.Count) * 100.0;
 
-            LatencyResultsGrid.Items.Refresh();
+            var shouldRefresh =
+                completedCases % UiRefreshCaseInterval == 0 ||
+                completedCases == _latencyCases.Count;
+
+            if (shouldRefresh)
+            {
+                RefreshRunTables();
+                UpdateCaseLatencySummaries();
+                UpdateViewLatencySummaries();
+
+                // Explicitly give WPF a chance to render input/progress between
+                // large batches without parallelizing the scientific inference.
+                await Dispatcher.Yield(
+                    DispatcherPriority.Background);
+            }
         }
 
         // -----------------------------------------------------------------
         // 4. SUMMARIZE
         // -----------------------------------------------------------------
         CompleteRunUi();
+
+        if (failedMessages.Count > 0)
+        {
+            var firstFailures = string.Join(
+                "\n",
+                failedMessages.Take(10));
+
+            var suffix =
+                failedMessages.Count > 10
+                    ? $"\n... and {failedMessages.Count - 10} more."
+                    : string.Empty;
+
+            MessageBox.Show(
+                $"{failedMessages.Count} case(s) failed.\n\n" +
+                firstFailures +
+                suffix,
+                "Latency Test",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -309,8 +372,10 @@ public partial class LatencyTestWindow : Window
         _frontalLatencyMeasurements.Clear();
         _lateralLatencyMeasurements.Clear();
 
-        FrontalLatencyGrid.Items.Refresh();
-        LateralLatencyGrid.Items.Refresh();
+        // Clear the bound collections through proper collection-change
+        // notifications instead of mutating a bound List + Items.Refresh().
+        _frontalLatencyRows.Clear();
+        _lateralLatencyRows.Clear();
 
         ResetViewLatencySummaries();
 
@@ -334,13 +399,45 @@ public partial class LatencyTestWindow : Window
         ViewLatencyMeasurement frontal,
         ViewLatencyMeasurement lateral)
     {
+        // Keep collecting every scientific measurement, but do not repaint
+        // the large tables after every fold. Repainting is batched by case.
         _frontalLatencyMeasurements.Add(frontal);
         _lateralLatencyMeasurements.Add(lateral);
+    }
 
-        FrontalLatencyGrid.Items.Refresh();
-        LateralLatencyGrid.Items.Refresh();
+    private void RefreshRunTables()
+    {
+        // Case rows keep the same object references during a run, so Refresh()
+        // is used only to redraw changed properties such as Status/Latency.
+        LatencyResultsGrid.Items.Refresh();
 
-        UpdateViewLatencySummaries();
+        // Never call Items.Refresh() on a List that is also being mutated.
+        // Append newly collected measurements to the WPF-bound observable
+        // collections. WPF then receives consistent change notifications.
+        SynchronizeMeasurementRows(
+            _frontalLatencyRows,
+            _frontalLatencyMeasurements);
+
+        SynchronizeMeasurementRows(
+            _lateralLatencyRows,
+            _lateralLatencyMeasurements);
+    }
+
+    private static void SynchronizeMeasurementRows(
+        ObservableCollection<ViewLatencyMeasurement> target,
+        IReadOnlyList<ViewLatencyMeasurement> source)
+    {
+        while (target.Count < source.Count)
+        {
+            target.Add(source[target.Count]);
+        }
+
+        // This normally only matters when a run is reset/restarted, but keeps
+        // the helper correct if the source ever becomes shorter.
+        while (target.Count > source.Count)
+        {
+            target.RemoveAt(target.Count - 1);
+        }
     }
 
     private static void ApplySuccessfulCaseResult(
@@ -389,6 +486,7 @@ public partial class LatencyTestWindow : Window
 
     private void CompleteRunUi()
     {
+        RefreshRunTables();
         UpdateCaseLatencySummaries();
         UpdateViewLatencySummaries();
         UpdateViewStatusTexts();
@@ -646,11 +744,11 @@ public partial class LatencyTestWindow : Window
     {
         _frontalLatencyMeasurements.Clear();
         _lateralLatencyMeasurements.Clear();
+        _frontalLatencyRows.Clear();
+        _lateralLatencyRows.Clear();
         _modelCount = 0;
 
         LatencyResultsGrid.Items.Refresh();
-        FrontalLatencyGrid.Items.Refresh();
-        LateralLatencyGrid.Items.Refresh();
 
         LatencyCaseCountText.Text =
             _latencyCases.Count.ToString();

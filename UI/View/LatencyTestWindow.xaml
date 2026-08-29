@@ -266,7 +266,14 @@
                                   Background="#2C2C2C"
                                   Foreground="White"
                                   BorderBrush="#5A5A5A"
-                                  MinHeight="240">
+                                  Height="260"
+                                  EnableRowVirtualization="True"
+                                  EnableColumnVirtualization="True"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling"
+                                  ScrollViewer.CanContentScroll="True"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Case"
                                                     Binding="{Binding CaseName}"
@@ -377,7 +384,14 @@
                                   Background="#2C2C2C"
                                   Foreground="White"
                                   BorderBrush="#5A5A5A"
-                                  MinHeight="320">
+                                  Height="320"
+                                  EnableRowVirtualization="True"
+                                  EnableColumnVirtualization="True"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling"
+                                  ScrollViewer.CanContentScroll="True"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Case"
                                                     Binding="{Binding CaseName}"
@@ -466,7 +480,14 @@
                                   Background="#2C2C2C"
                                   Foreground="White"
                                   BorderBrush="#5A5A5A"
-                                  MinHeight="320">
+                                  Height="320"
+                                  EnableRowVirtualization="True"
+                                  EnableColumnVirtualization="True"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling"
+                                  ScrollViewer.CanContentScroll="True"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Case"
                                                     Binding="{Binding CaseName}"

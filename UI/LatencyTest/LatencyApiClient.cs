@@ -15,6 +15,36 @@ public sealed class LatencyApiClient
         Timeout = TimeSpan.FromMinutes(5)
     };
 
+    public async Task PrepareImagesAsync(
+        string fileFrontal,
+        string fileLateral)
+    {
+        var request = new
+        {
+            PathFrontal = fileFrontal,
+            PathLateral = fileLateral
+        };
+
+        using var response = await PostAsync(
+            request,
+            "/AiService/LatencyPrepareImages");
+    }
+
+    public async Task ReleasePreparedImagesAsync(
+        string fileFrontal,
+        string fileLateral)
+    {
+        var request = new
+        {
+            PathFrontal = fileFrontal,
+            PathLateral = fileLateral
+        };
+
+        using var response = await PostAsync(
+            request,
+            "/AiService/LatencyReleaseImages");
+    }
+
     public async Task<LatencyClassificationResponse> ClassifyAsync(
         string modelFrontal,
         string modelLateral,
@@ -29,15 +59,9 @@ public sealed class LatencyApiClient
             ModelLateral = modelLateral
         };
 
-        var json = JsonConvert.SerializeObject(request);
-        using var data =
-            new StringContent(json, Encoding.UTF8, "application/json");
-
-        using var response = await Client.PostAsync(
-            "/AiService/LatencyClassification",
-            data);
-
-        response.EnsureSuccessStatusCode();
+        using var response = await PostAsync(
+            request,
+            "/AiService/LatencyClassification");
 
         var content = await response.Content.ReadAsStringAsync();
 
@@ -45,5 +69,19 @@ public sealed class LatencyApiClient
                    content)
                ?? throw new InvalidOperationException(
                    "Failed to convert latency classification response");
+    }
+
+    private static async Task<HttpResponseMessage> PostAsync(
+        object request,
+        string uri)
+    {
+        var json = JsonConvert.SerializeObject(request);
+        using var data =
+            new StringContent(json, Encoding.UTF8, "application/json");
+
+        var response = await Client.PostAsync(uri, data);
+        response.EnsureSuccessStatusCode();
+
+        return response;
     }
 }
