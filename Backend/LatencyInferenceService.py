@@ -11,6 +11,59 @@ class LatencyInferenceService:
     def __init__(self, classificator):
         self._classificator = classificator
 
+    def configure_execution_unit(self, execution_unit):
+        """Configure CPU/GPU execution for the complete latency test run."""
+        unit = str(execution_unit).strip().upper()
+
+        if unit not in ("CPU", "GPU"):
+            raise ValueError(
+                "ExecutionUnit must be either 'CPU' or 'GPU'.")
+
+        if unit == "GPU":
+            if not torch.cuda.is_available() or torch.cuda.device_count() == 0:
+                raise ValueError(
+                    "GPU execution was selected, but CUDA is not available.")
+
+            # Match the original application's GPU-selection convention:
+            # use the last available CUDA device.
+            device = torch.device(
+                f"cuda:{torch.cuda.device_count() - 1}")
+            torch.cuda.set_device(device)
+            run_on_cuda = True
+        else:
+            device = torch.device("cpu")
+            run_on_cuda = False
+
+        # The original _run_model() checks Classificator.run_on_cuda/device,
+        # while CnnLstmModel.forward() uses model.device for its input tensor.
+        # Keep both pieces of the existing thesis path consistent.
+        all_models = (
+            list(self._classificator.models_frontal.values()) +
+            list(self._classificator.models_lateral.values())
+        )
+
+        for model in all_models:
+            # Keep checkpoints on CPU between sequential fold executions.
+            # Original Classificator._run_model() moves the selected model to
+            # CUDA when run_on_cuda is True.
+            model.cpu()
+            model.device = device
+
+        self._classificator.device = device
+        self._classificator.run_on_cuda = run_on_cuda
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        print(
+            "Latency execution unit configured: "
+            f"{unit} ({device})")
+
+        return {
+            "ExecutionProvider": unit,
+            "TimingDevice": str(device)
+        }
+
     def prepare_images(self, image_f, image_l):
         """Reuse the original thesis preprocessing without returning preview images."""
         if (not image_f or not os.path.exists(image_f) or

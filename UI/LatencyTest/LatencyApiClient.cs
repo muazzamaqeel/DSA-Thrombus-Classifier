@@ -15,6 +15,19 @@ public sealed class LatencyApiClient
         Timeout = TimeSpan.FromMinutes(5)
     };
 
+    public async Task ConfigureExecutionUnitAsync(
+        string executionUnit)
+    {
+        var request = new
+        {
+            ExecutionUnit = executionUnit
+        };
+
+        using var response = await PostAsync(
+            request,
+            "/AiService/LatencyExecutionUnit");
+    }
+
     public async Task PrepareImagesAsync(
         string fileFrontal,
         string fileLateral)

@@ -132,6 +132,30 @@ public partial class LatencyTestWindow : Window
             return;
         }
 
+        // Capture both user-controlled test parameters once before the run.
+        // Every case/fold in this test therefore uses the same configuration.
+        var classificationThreshold =
+            LatencyThresholdSlider.Value;
+
+        var executionUnit =
+            GetSelectedExecutionUnit();
+
+        try
+        {
+            await _runner.ConfigureExecutionUnitAsync(
+                executionUnit);
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                $"Could not configure execution unit '{executionUnit}'.\n\n" +
+                exception.Message,
+                "Latency Test - Execution Unit",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return;
+        }
+
         BeginRunUi(modelNames.Count);
 
         var completedCases = 0;
@@ -153,7 +177,7 @@ public partial class LatencyTestWindow : Window
                 var result = await _runner.RunCaseAsync(
                     latencyCase,
                     modelNames,
-                    LatencyThresholdSlider.Value,
+                    classificationThreshold,
                     OnFoldCompleted);
 
                 ApplySuccessfulCaseResult(
@@ -337,6 +361,28 @@ public partial class LatencyTestWindow : Window
         return true;
     }
 
+    private string GetSelectedExecutionUnit()
+    {
+        if (ExecutionUnitComboBox.SelectedItem is
+            System.Windows.Controls.ComboBoxItem selectedItem)
+        {
+            var value =
+                selectedItem.Content?
+                    .ToString()?
+                    .Trim()
+                    .ToUpperInvariant();
+
+            if (value is "CPU" or "GPU")
+            {
+                return value;
+            }
+        }
+
+        // Preserve the application's previous GPU-first behavior as the
+        // default when no explicit ComboBox selection can be read.
+        return "GPU";
+    }
+
     private static void ShowWarning(string message)
     {
         MessageBox.Show(
@@ -355,6 +401,8 @@ public partial class LatencyTestWindow : Window
         _modelCount = modelCount;
 
         StartLatencyTestButton.IsEnabled = false;
+        LatencyThresholdSlider.IsEnabled = false;
+        ExecutionUnitComboBox.IsEnabled = false;
         LatencyProgressBar.Value = 0;
 
         LatencyAverageText.Text = "- ms";
@@ -381,11 +429,11 @@ public partial class LatencyTestWindow : Window
 
         FrontalLatencyStatusText.Text =
             "Collecting frontal per-case / " +
-            "per-fold GPU-safe backend timings...";
+            "per-fold backend timings...";
 
         LateralLatencyStatusText.Text =
             "Collecting lateral per-case / " +
-            "per-fold GPU-safe backend timings...";
+            "per-fold backend timings...";
 
         foreach (var latencyCase in _latencyCases)
         {
@@ -504,6 +552,8 @@ public partial class LatencyTestWindow : Window
                   $"cases. {failedCases} failed.";
 
         StartLatencyTestButton.IsEnabled = true;
+        LatencyThresholdSlider.IsEnabled = true;
+        ExecutionUnitComboBox.IsEnabled = true;
         StartLatencyTestButton.ToolTip =
             "Run latency test again";
     }

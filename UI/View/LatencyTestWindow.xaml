@@ -139,48 +139,84 @@
                             </Border>
                         </Grid>
 
-                        <!-- Paper-compatible classification threshold.
-                             Default is 0.57, but the evaluator can change it directly
-                             in this latency window before starting a run. -->
-                        <Border Background="#3B3B3B"
-                                CornerRadius="10"
-                                Padding="14"
-                                Margin="0,2,0,10"
-                                HorizontalAlignment="Center"
-                                Width="560">
-                            <StackPanel>
-                                <TextBlock Text="Classification Threshold"
-                                           FontSize="17"
-                                           FontWeight="SemiBold"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,0,0,4" />
+                        <!-- Test parameters: aligned directly below the two folder selectors -->
+                        <Grid Margin="0,2,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="20" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
 
-                                <TextBlock Text="{Binding ElementName=LatencyThresholdSlider, Path=Value, StringFormat={}{0:F2}}"
-                                           FontSize="20"
-                                           FontWeight="SemiBold"
-                                           HorizontalAlignment="Center"
-                                           Foreground="#FFC107"
-                                           Margin="0,0,0,4" />
+                            <!-- Left: paper-compatible classification threshold -->
+                            <Border Grid.Column="0"
+                                    Background="#3B3B3B"
+                                    CornerRadius="10"
+                                    Padding="14">
+                                <StackPanel>
+                                    <TextBlock Text="Classification Threshold"
+                                               FontSize="17"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,0,0,4" />
 
-                                <Slider x:Name="LatencyThresholdSlider"
-                                        Minimum="0"
-                                        Maximum="1"
-                                        Value="0.57"
-                                        TickFrequency="0.01"
-                                        IsSnapToTickEnabled="True"
-                                        SmallChange="0.01"
-                                        LargeChange="0.05"
-                                        Width="470"
-                                        HorizontalAlignment="Center"
-                                        ToolTip="Classification threshold used for this latency evaluation. Paper default: 0.57." />
+                                    <TextBlock Text="{Binding ElementName=LatencyThresholdSlider, Path=Value, StringFormat={}{0:F2}}"
+                                               FontSize="20"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Foreground="#FFC107"
+                                               Margin="0,0,0,4" />
 
-                                <TextBlock Text="Paper default: 0.57"
-                                           FontSize="11"
-                                           Foreground="#D9D9D9"
-                                           HorizontalAlignment="Center"
-                                           Margin="0,4,0,0" />
-                            </StackPanel>
-                        </Border>
+                                    <Slider x:Name="LatencyThresholdSlider"
+                                            Minimum="0"
+                                            Maximum="1"
+                                            Value="0.57"
+                                            TickFrequency="0.01"
+                                            IsSnapToTickEnabled="True"
+                                            SmallChange="0.01"
+                                            LargeChange="0.05"
+                                            Width="470"
+                                            HorizontalAlignment="Center"
+                                            ToolTip="Classification threshold used for this latency evaluation. Paper default: 0.57." />
+
+                                    <TextBlock Text=""
+                                               FontSize="11"
+                                               Foreground="#D9D9D9"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Right: execution unit for the complete test run -->
+                            <Border Grid.Column="2"
+                                    Background="#3B3B3B"
+                                    CornerRadius="10"
+                                    Padding="14">
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Execution Unit"
+                                               FontSize="17"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,0,0,12" />
+
+                                    <ComboBox x:Name="ExecutionUnitComboBox"
+                                              Width="220"
+                                              Height="38"
+                                              SelectedIndex="1"
+                                              HorizontalAlignment="Center"
+                                              FontSize="15"
+                                              ToolTip="Select the execution unit used for the complete latency test before pressing Play.">
+                                        <ComboBoxItem Content="CPU" />
+                                        <ComboBoxItem Content="GPU" />
+                                    </ComboBox>
+
+                                    <TextBlock Text="Applied to the complete test run"
+                                               FontSize="11"
+                                               Foreground="#D9D9D9"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
 
                         <!-- Play-only start control: no Button template and no text -->
                         <Border x:Name="StartLatencyTestButton"

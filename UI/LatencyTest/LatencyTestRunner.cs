@@ -18,6 +18,13 @@ public sealed class LatencyTestRunner
             latencyApiClient ?? new LatencyApiClient();
     }
 
+    public Task ConfigureExecutionUnitAsync(
+        string executionUnit)
+    {
+        return _latencyApiClient.ConfigureExecutionUnitAsync(
+            executionUnit);
+    }
+
     public async Task<LatencyCaseRunResult> RunCaseAsync(
         LatencyCase latencyCase,
         IReadOnlyCollection<string> modelNames,

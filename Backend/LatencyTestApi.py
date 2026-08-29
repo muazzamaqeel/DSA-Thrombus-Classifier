@@ -26,6 +26,18 @@ def create_latency_blueprint(classificator):
 
         return content
 
+    @blueprint.route("/AiService/LatencyExecutionUnit", methods=["POST"])
+    def latency_execution_unit_requested():
+        try:
+            content = _get_required_content(("ExecutionUnit",))
+
+            result = latency_service.configure_execution_unit(
+                content["ExecutionUnit"])
+        except ValueError as exception:
+            return flask.Response(str(exception), status=400)
+
+        return flask.jsonify(result)
+
     @blueprint.route("/AiService/LatencyPrepareImages", methods=["POST"])
     def latency_prepare_images_requested():
         try:
