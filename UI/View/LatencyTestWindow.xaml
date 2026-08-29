@@ -1,0 +1,564 @@
+<Window x:Class="UI.View.LatencyTestWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+        mc:Ignorable="d"
+        Title="Evaluation Latency"
+        Height="900"
+        Width="1500"
+        MinHeight="700"
+        MinWidth="1100"
+        Background="#2F2F2F"
+        Foreground="White">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <Grid Margin="14">
+            <StackPanel>
+
+                <!-- Header -->
+                <TextBlock Text="Evaluation Latency"
+                           FontSize="34"
+                           FontWeight="Light"
+                           HorizontalAlignment="Center"
+                           Margin="0,8,0,18" />
+
+                <!-- Test Configuration -->
+                <Border Background="#454545"
+                        CornerRadius="14"
+                        Padding="18"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Test Configuration"
+                                   FontSize="24"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,18" />
+
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="20" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Model Folder -->
+                            <Border Grid.Column="0"
+                                    Background="#3B3B3B"
+                                    CornerRadius="12"
+                                    Padding="16">
+                                <StackPanel>
+                                    <TextBlock Text="Model Folder"
+                                               FontSize="18"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,0,0,10" />
+
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Center"
+                                                Margin="0,0,0,8">
+                                        <Button Command="{Binding BrowseModelFolderCommand}"
+                                                Padding="16,8"
+                                                Margin="0,0,8,0"
+                                                Background="#FFC107"
+                                                Foreground="Black"
+                                                BorderBrush="#FFC107"
+                                                FontWeight="SemiBold"
+                                                Cursor="Hand">
+                                            <StackPanel Orientation="Horizontal">
+                                                <materialDesign:PackIcon Kind="FolderSearch"
+                                                                         Width="18"
+                                                                         Height="18"
+                                                                         Margin="0,0,6,0" />
+                                                <TextBlock Text="Select Model Folder" />
+                                            </StackPanel>
+                                        </Button>
+
+                                        <materialDesign:PackIcon Kind="{Binding ModelSelectionFolderBadge.Kind}"
+                                                                 Width="22"
+                                                                 Height="22"
+                                                                 VerticalAlignment="Center"
+                                                                 Foreground="#FFB000" />
+                                    </StackPanel>
+
+                                    <TextBlock Text="{Binding ModelSelectionFolder}"
+                                               TextWrapping="Wrap"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center"
+                                               FontSize="11"
+                                               Foreground="#E0E0E0" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Dataset Folder -->
+                            <Border Grid.Column="2"
+                                    Background="#3B3B3B"
+                                    CornerRadius="12"
+                                    Padding="16">
+                                <StackPanel>
+                                    <TextBlock Text="Dataset Folder"
+                                               FontSize="18"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,0,0,10" />
+
+                                    <Button Click="SelectLatencyDataset_Click"
+                                            Padding="16,8"
+                                            HorizontalAlignment="Center"
+                                            Margin="0,0,0,8"
+                                            Background="#FFC107"
+                                            Foreground="Black"
+                                            BorderBrush="#FFC107"
+                                            FontWeight="SemiBold"
+                                            Cursor="Hand">
+                                        <StackPanel Orientation="Horizontal">
+                                            <materialDesign:PackIcon Kind="FolderOpen"
+                                                                     Width="18"
+                                                                     Height="18"
+                                                                     Margin="0,0,6,0" />
+                                            <TextBlock Text="Select Dataset Folder" />
+                                        </StackPanel>
+                                    </Button>
+
+                                    <TextBlock x:Name="LatencyDatasetPathText"
+                                               Text=""
+                                               TextWrapping="Wrap"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center"
+                                               FontSize="11"
+                                               Foreground="#E0E0E0" />
+
+                                    <TextBlock Text="The dataset folder is scanned for matching frontal (_C_) and lateral (_S_) NIfTI sequences."
+                                               TextWrapping="Wrap"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center"
+                                               Margin="0,8,0,0"
+                                               FontSize="11"
+                                               Foreground="#D9D9D9" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <!-- Paper-compatible classification threshold.
+                             Default is 0.57, but the evaluator can change it directly
+                             in this latency window before starting a run. -->
+                        <Border Background="#3B3B3B"
+                                CornerRadius="10"
+                                Padding="14"
+                                Margin="0,2,0,10"
+                                HorizontalAlignment="Center"
+                                Width="560">
+                            <StackPanel>
+                                <TextBlock Text="Classification Threshold"
+                                           FontSize="17"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,0,0,4" />
+
+                                <TextBlock Text="{Binding ElementName=LatencyThresholdSlider, Path=Value, StringFormat={}{0:F2}}"
+                                           FontSize="20"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Center"
+                                           Foreground="#FFC107"
+                                           Margin="0,0,0,4" />
+
+                                <Slider x:Name="LatencyThresholdSlider"
+                                        Minimum="0"
+                                        Maximum="1"
+                                        Value="0.57"
+                                        TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        SmallChange="0.01"
+                                        LargeChange="0.05"
+                                        Width="470"
+                                        HorizontalAlignment="Center"
+                                        ToolTip="Classification threshold used for this latency evaluation. Paper default: 0.57." />
+
+                                <TextBlock Text="Paper default: 0.57"
+                                           FontSize="11"
+                                           Foreground="#D9D9D9"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Play-only start control: no Button template and no text -->
+                        <Border x:Name="StartLatencyTestButton"
+                                Width="78"
+                                Height="58"
+                                Margin="0,6,0,2"
+                                HorizontalAlignment="Center"
+                                Background="#FFC107"
+                                BorderBrush="#D79E00"
+                                BorderThickness="1"
+                                CornerRadius="5"
+                                Cursor="Hand"
+                                ToolTip="Start latency test"
+                                MouseLeftButtonUp="StartLatencyTestSurface_MouseLeftButtonUp">
+                            <Grid>
+                                <Polygon Points="0,0 0,28 24,14"
+                                         Fill="Black"
+                                         Stretch="Uniform"
+                                         Width="24"
+                                         Height="28"
+                                         HorizontalAlignment="Center"
+                                         VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <!-- Test Progress -->
+                <Border Background="#454545"
+                        CornerRadius="14"
+                        Padding="18"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Test Progress"
+                                   FontSize="24"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,14" />
+
+                        <ProgressBar x:Name="LatencyProgressBar"
+                                     Height="8"
+                                     Minimum="0"
+                                     Maximum="100"
+                                     Value="0"
+                                     Margin="0,0,0,10" />
+
+                        <TextBlock x:Name="LatencyProgressText"
+                                   Text="Select a dataset and start the test."
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"
+                                   Foreground="#E6E6E6" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Primary Result -->
+                <Border Background="#454545"
+                        CornerRadius="14"
+                        Padding="18"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Primary Result - Ensemble Inference"
+                                   FontSize="24"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,8" />
+
+                        <TextBlock Text="One row = one paired DSA case. The reported inference time is the sum of the original thesis model execution path for frontal + lateral across the five folds."
+                                   TextWrapping="Wrap"
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"
+                                   FontSize="12"
+                                   Foreground="#E0E0E0"
+                                   Margin="0,0,0,14" />
+
+                        <DataGrid x:Name="LatencyResultsGrid"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  IsReadOnly="True"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  AlternationCount="2"
+                                  RowBackground="#313131"
+                                  AlternatingRowBackground="#383838"
+                                  Background="#2C2C2C"
+                                  Foreground="White"
+                                  BorderBrush="#5A5A5A"
+                                  Height="260"
+                                  EnableRowVirtualization="True"
+                                  EnableColumnVirtualization="True"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling"
+                                  ScrollViewer.CanContentScroll="True"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Case"
+                                                    Binding="{Binding CaseName}"
+                                                    Width="2*" />
+                                <DataGridTextColumn Header="Classification"
+                                                    Binding="{Binding Classification}"
+                                                    Width="2*" />
+                                <DataGridTextColumn Header="Ensemble inference (ms)"
+                                                    Binding="{Binding BackendInferenceMilliseconds}"
+                                                    Width="1.5*" />
+                                <DataGridTextColumn Header="Execution"
+                                                    Binding="{Binding ExecutionProvider}"
+                                                    Width="*" />
+                                <DataGridTextColumn Header="Status"
+                                                    Binding="{Binding Status}"
+                                                    Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <Grid Margin="14,14,14,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="1.5*" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                <TextBlock Text="MEAN INFERENCE"
+                                           FontSize="11"
+                                           Foreground="#D9D9D9"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LatencyAverageText"
+                                           Text="- ms"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                                <TextBlock Text="MIN"
+                                           FontSize="11"
+                                           Foreground="#D9D9D9"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LatencyMinText"
+                                           Text="- ms"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                                <TextBlock Text="MAX"
+                                           FontSize="11"
+                                           Foreground="#D9D9D9"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LatencyMaxText"
+                                           Text="- ms"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                                <TextBlock Text="EXECUTION"
+                                           FontSize="11"
+                                           Foreground="#D9D9D9"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock x:Name="ExecutionSummaryText"
+                                           Text="-"
+                                           TextWrapping="Wrap"
+                                           HorizontalAlignment="Center"
+                                           TextAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Frontal -->
+                <Border Background="#454545"
+                        CornerRadius="14"
+                        Padding="18"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Frontal Per-Fold Timings"
+                                   FontSize="24"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,10" />
+
+                        <TextBlock x:Name="FrontalLatencyStatusText"
+                                   Visibility="Collapsed"
+                                   Text=""
+                                   TextWrapping="Wrap"
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"
+                                   Foreground="#E6E6E6"
+                                   Margin="0,0,0,12" />
+
+                        <DataGrid x:Name="FrontalLatencyGrid"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  IsReadOnly="True"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  RowBackground="#313131"
+                                  AlternatingRowBackground="#383838"
+                                  Background="#2C2C2C"
+                                  Foreground="White"
+                                  BorderBrush="#5A5A5A"
+                                  Height="320"
+                                  EnableRowVirtualization="True"
+                                  EnableColumnVirtualization="True"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling"
+                                  ScrollViewer.CanContentScroll="True"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Case"
+                                                    Binding="{Binding CaseName}"
+                                                    Width="2*" />
+                                <DataGridTextColumn Header="Model / Fold"
+                                                    Binding="{Binding ModelName}"
+                                                    Width="2*" />
+                                <DataGridTextColumn Header="Frontal inference (ms)"
+                                                    Binding="{Binding LatencyMilliseconds}"
+                                                    Width="1.6*" />
+                                <DataGridTextColumn Header="Execution"
+                                                    Binding="{Binding ExecutionProvider}"
+                                                    Width="*" />
+                                <DataGridTextColumn Header="Status"
+                                                    Binding="{Binding Status}"
+                                                    Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                <TextBlock Text="SEQUENCES" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="FrontalSequenceCountText" Text="0" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                                <TextBlock Text="MEASUREMENTS" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="FrontalMeasurementCountText" Text="0" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                                <TextBlock Text="MIN" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="FrontalMinText" Text="- ms" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                                <TextBlock Text="MEAN" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="FrontalAverageText" Text="- ms" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="4" HorizontalAlignment="Center">
+                                <TextBlock Text="MAX" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="FrontalMaxText" Text="- ms" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Lateral -->
+                <Border Background="#454545"
+                        CornerRadius="14"
+                        Padding="18"
+                        Margin="0,0,0,14">
+                    <StackPanel>
+                        <TextBlock Text="Lateral Per-Fold Timings"
+                                   FontSize="24"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,10" />
+
+                        <TextBlock x:Name="LateralLatencyStatusText"
+                                   Visibility="Collapsed"
+                                   Text=""
+                                   TextWrapping="Wrap"
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"
+                                   Foreground="#E6E6E6"
+                                   Margin="0,0,0,12" />
+
+                        <DataGrid x:Name="LateralLatencyGrid"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  IsReadOnly="True"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  RowBackground="#313131"
+                                  AlternatingRowBackground="#383838"
+                                  Background="#2C2C2C"
+                                  Foreground="White"
+                                  BorderBrush="#5A5A5A"
+                                  Height="320"
+                                  EnableRowVirtualization="True"
+                                  EnableColumnVirtualization="True"
+                                  VirtualizingPanel.IsVirtualizing="True"
+                                  VirtualizingPanel.VirtualizationMode="Recycling"
+                                  ScrollViewer.CanContentScroll="True"
+                                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Case"
+                                                    Binding="{Binding CaseName}"
+                                                    Width="2*" />
+                                <DataGridTextColumn Header="Model / Fold"
+                                                    Binding="{Binding ModelName}"
+                                                    Width="2*" />
+                                <DataGridTextColumn Header="Lateral inference (ms)"
+                                                    Binding="{Binding LatencyMilliseconds}"
+                                                    Width="1.6*" />
+                                <DataGridTextColumn Header="Execution"
+                                                    Binding="{Binding ExecutionProvider}"
+                                                    Width="*" />
+                                <DataGridTextColumn Header="Status"
+                                                    Binding="{Binding Status}"
+                                                    Width="*" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                <TextBlock Text="SEQUENCES" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LateralSequenceCountText" Text="0" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                                <TextBlock Text="MEASUREMENTS" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LateralMeasurementCountText" Text="0" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                                <TextBlock Text="MIN" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LateralMinText" Text="- ms" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                                <TextBlock Text="MEAN" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LateralAverageText" Text="- ms" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="4" HorizontalAlignment="Center">
+                                <TextBlock Text="MAX" FontSize="11" Foreground="#D9D9D9" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="LateralMaxText" Text="- ms" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Hidden placeholders kept only to avoid changing code-behind -->
+                <StackPanel Visibility="Collapsed">
+                    <TextBlock x:Name="TimingMethodSummaryText" Text="Timing method: -" />
+
+                    <TextBlock x:Name="EndToEndAverageText" Text="- ms" />
+                    <TextBlock x:Name="EndToEndMinText" Text="- ms" />
+                    <TextBlock x:Name="EndToEndMaxText" Text="- ms" />
+
+                    <TextBlock x:Name="LatencyCaseCountText" Text="0" />
+                    <TextBlock x:Name="TotalSelectedSequenceText" Text="0" />
+                    <TextBlock x:Name="TotalModelCountText" Text="0" />
+                    <TextBlock x:Name="TotalViewMeasurementText" Text="0" />
+                </StackPanel>
+
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</Window>

@@ -35,6 +35,14 @@
                         Kind="Information" />
                 </Button>
 
+                <Button DockPanel.Dock="Right"
+                        Style="{StaticResource MaterialDesignIconForegroundButton}"
+                        Command="{x:Static view:LatencyTestWindow.OpenCommand}"
+                        CommandParameter="{Binding RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                        ToolTip="Latency Test">
+                    <materialDesign:PackIcon Kind="Timer" />
+                </Button>
+
                 <TextBlock
                     Style="{StaticResource MaterialDesignHeadline2TextBlock}"
                     Text="DSA Classifier" Margin="10" HorizontalAlignment="Center" />

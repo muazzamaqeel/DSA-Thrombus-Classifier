@@ -1,0 +1,828 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Input;
+using System.Windows.Threading;
+using MaterialDesignThemes.Wpf;
+using Microsoft.WindowsAPICodePack.Dialogs;
+using UI.LatencyTest;
+
+namespace UI.View;
+
+public partial class LatencyTestWindow : Window
+{
+    // Avoid repainting thousands of DataGrid rows after every fold/case.
+    // A refresh every 10 completed cases keeps the GUI responsive while the
+    // progress text/bar still update for every case.
+    private const int UiRefreshCaseInterval = 10;
+
+    private static readonly string[] PaperFoldModelNames =
+    {
+        "fold1.pt",
+        "fold2.pt",
+        "fold3.pt",
+        "fold4.pt",
+        "fold5.pt"
+    };
+
+    private readonly LatencyDatasetScanner _datasetScanner = new();
+    private readonly LatencyTestRunner _runner = new();
+
+    // Master result collections are never bound directly to WPF.
+    // This prevents WPF's CollectionView from observing a List while that
+    // same List is being changed between asynchronous fold requests.
+    private readonly List<LatencyCase> _latencyCases = new();
+    private readonly List<ViewLatencyMeasurement>
+        _frontalLatencyMeasurements = new();
+    private readonly List<ViewLatencyMeasurement>
+        _lateralLatencyMeasurements = new();
+
+    // WPF receives changes only through ObservableCollection notifications.
+    // The per-fold rows are copied here in batches every N completed cases.
+    private readonly ObservableCollection<LatencyCase>
+        _latencyCaseRows = new();
+    private readonly ObservableCollection<ViewLatencyMeasurement>
+        _frontalLatencyRows = new();
+    private readonly ObservableCollection<ViewLatencyMeasurement>
+        _lateralLatencyRows = new();
+
+    private int _modelCount;
+
+    public static ICommand OpenCommand { get; } =
+        new LatencyTestOpenCommand();
+
+    public LatencyTestWindow()
+    {
+        InitializeComponent();
+
+        LatencyResultsGrid.ItemsSource = _latencyCaseRows;
+        FrontalLatencyGrid.ItemsSource =
+            _frontalLatencyRows;
+        LateralLatencyGrid.ItemsSource =
+            _lateralLatencyRows;
+
+        ResetViewLatencySummaries();
+    }
+
+    // ---------------------------------------------------------------------
+    // 1. CONFIGURE DATASET
+    // ---------------------------------------------------------------------
+
+    private async void SelectLatencyDataset_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var dialog = new CommonOpenFileDialog
+        {
+            IsFolderPicker = true,
+            Title = "Select latency test dataset folder"
+        };
+
+        if (dialog.ShowDialog() !=
+            CommonFileDialogResult.Ok)
+        {
+            return;
+        }
+
+        var datasetPath = dialog.FileName;
+
+        LatencyDatasetPathText.Text = datasetPath;
+        LatencyProgressText.Text = "Scanning dataset...";
+        StartLatencyTestButton.IsEnabled = false;
+
+        // File-system scanning/pair construction does not need the UI thread.
+        var scannedCases = await Task.Run(
+            () => _datasetScanner.Scan(datasetPath));
+
+        _latencyCases.Clear();
+        _latencyCases.AddRange(scannedCases);
+
+        _latencyCaseRows.Clear();
+        foreach (var latencyCase in _latencyCases)
+        {
+            _latencyCaseRows.Add(latencyCase);
+        }
+
+        ResetAfterDatasetScan();
+    }
+
+    // ---------------------------------------------------------------------
+    // 2. VALIDATE + START
+    // ---------------------------------------------------------------------
+
+    private void StartLatencyTestSurface_MouseLeftButtonUp(
+        object sender,
+        MouseButtonEventArgs e)
+    {
+        StartLatencyTestButton_Click(sender, e);
+    }
+
+    private async void StartLatencyTestButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (!TryCreateRunConfiguration(
+                out _,
+                out var modelNames))
+        {
+            return;
+        }
+
+        BeginRunUi(modelNames.Count);
+
+        var completedCases = 0;
+        var failedMessages = new List<string>();
+
+        // -----------------------------------------------------------------
+        // 3. PROCESS CASES
+        // -----------------------------------------------------------------
+        foreach (var latencyCase in _latencyCases)
+        {
+            latencyCase.Status = "Processing";
+            LatencyProgressText.Text =
+                $"Processing {completedCases + 1} of " +
+                $"{_latencyCases.Count}: " +
+                latencyCase.CaseName;
+
+            try
+            {
+                var result = await _runner.RunCaseAsync(
+                    latencyCase,
+                    modelNames,
+                    LatencyThresholdSlider.Value,
+                    OnFoldCompleted);
+
+                ApplySuccessfulCaseResult(
+                    latencyCase,
+                    result);
+            }
+            catch (Exception exception)
+            {
+                ApplyFailedCaseResult(latencyCase);
+
+                // Do not block a long unattended run with one MessageBox
+                // per failed case. Collect the details and show one summary.
+                failedMessages.Add(
+                    $"{latencyCase.CaseName}: {exception.Message}");
+            }
+
+            completedCases++;
+
+            LatencyProgressBar.Value =
+                ((double)completedCases /
+                 _latencyCases.Count) * 100.0;
+
+            var shouldRefresh =
+                completedCases % UiRefreshCaseInterval == 0 ||
+                completedCases == _latencyCases.Count;
+
+            if (shouldRefresh)
+            {
+                RefreshRunTables();
+                UpdateCaseLatencySummaries();
+                UpdateViewLatencySummaries();
+
+                // Explicitly give WPF a chance to render input/progress between
+                // large batches without parallelizing the scientific inference.
+                await Dispatcher.Yield(
+                    DispatcherPriority.Background);
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // 4. SUMMARIZE
+        // -----------------------------------------------------------------
+        CompleteRunUi();
+
+        if (failedMessages.Count > 0)
+        {
+            var firstFailures = string.Join(
+                "\n",
+                failedMessages.Take(10));
+
+            var suffix =
+                failedMessages.Count > 10
+                    ? $"\n... and {failedMessages.Count - 10} more."
+                    : string.Empty;
+
+            MessageBox.Show(
+                $"{failedMessages.Count} case(s) failed.\n\n" +
+                firstFailures +
+                suffix,
+                "Latency Test",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // CONFIGURATION / VALIDATION
+    // ---------------------------------------------------------------------
+
+    private bool TryCreateRunConfiguration(
+        out MainWindowViewModel vm,
+        out List<string> modelNames)
+    {
+        vm = null!;
+        modelNames = new List<string>();
+
+        if (_latencyCases.Count == 0)
+        {
+            ShowWarning(
+                "No dataset cases are available.");
+            return false;
+        }
+
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            MessageBox.Show(
+                "The classifier view model is unavailable.",
+                "Latency Test",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return false;
+        }
+
+        vm = viewModel;
+
+        if (string.IsNullOrWhiteSpace(
+                vm.ModelSelectionFolder))
+        {
+            ShowWarning(
+                "Please select a model folder first.");
+            return false;
+        }
+
+        if (vm.ModelSelectionFolderBadge.Kind !=
+            PackIconKind.Check)
+        {
+            ShowWarning(
+                "The models are not ready yet. " +
+                "Please wait until model initialization " +
+                "has completed successfully.");
+            return false;
+        }
+
+        var frontalModelFolder = Path.Join(
+            vm.ModelSelectionFolder,
+            "frontal");
+
+        var lateralModelFolder = Path.Join(
+            vm.ModelSelectionFolder,
+            "lateral");
+
+        if (!Directory.Exists(frontalModelFolder) ||
+            !Directory.Exists(lateralModelFolder))
+        {
+            MessageBox.Show(
+                "The selected model folder must contain both " +
+                "'frontal' and 'lateral' directories.",
+                "Latency Test",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return false;
+        }
+
+        var frontalModelNames = Directory
+            .GetFiles(frontalModelFolder, "*.pt")
+            .Select(Path.GetFileName)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name!)
+            .OrderBy(
+                name => name,
+                StringComparer.Ordinal)
+            .ToList();
+
+        var lateralModelNames = Directory
+            .GetFiles(lateralModelFolder, "*.pt")
+            .Select(Path.GetFileName)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name!)
+            .OrderBy(
+                name => name,
+                StringComparer.Ordinal)
+            .ToList();
+
+        var expectedPaperModels = PaperFoldModelNames
+            .OrderBy(
+                name => name,
+                StringComparer.Ordinal)
+            .ToList();
+
+        if (!frontalModelNames.SequenceEqual(
+                expectedPaperModels,
+                StringComparer.Ordinal) ||
+            !lateralModelNames.SequenceEqual(
+                expectedPaperModels,
+                StringComparer.Ordinal))
+        {
+            MessageBox.Show(
+                "For exact paper reproduction, the frontal and lateral " +
+                "model folders must each contain exactly these five " +
+                "checkpoints:\n\n" +
+                string.Join("\n", PaperFoldModelNames) +
+                "\n\nNo additional .pt checkpoints are allowed.",
+                "Latency Test - Paper 5-Fold Configuration",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return false;
+        }
+
+        modelNames = PaperFoldModelNames.ToList();
+
+        return true;
+    }
+
+    private static void ShowWarning(string message)
+    {
+        MessageBox.Show(
+            message,
+            "Latency Test",
+            MessageBoxButton.OK,
+            MessageBoxImage.Warning);
+    }
+
+    // ---------------------------------------------------------------------
+    // RUN UI
+    // ---------------------------------------------------------------------
+
+    private void BeginRunUi(int modelCount)
+    {
+        _modelCount = modelCount;
+
+        StartLatencyTestButton.IsEnabled = false;
+        LatencyProgressBar.Value = 0;
+
+        LatencyAverageText.Text = "- ms";
+        LatencyMinText.Text = "- ms";
+        LatencyMaxText.Text = "- ms";
+
+        EndToEndAverageText.Text = "- ms";
+        EndToEndMinText.Text = "- ms";
+        EndToEndMaxText.Text = "- ms";
+
+        ExecutionSummaryText.Text = "-";
+        TimingMethodSummaryText.Text =
+            "Timing method: -";
+
+        _frontalLatencyMeasurements.Clear();
+        _lateralLatencyMeasurements.Clear();
+
+        // Clear the bound collections through proper collection-change
+        // notifications instead of mutating a bound List + Items.Refresh().
+        _frontalLatencyRows.Clear();
+        _lateralLatencyRows.Clear();
+
+        ResetViewLatencySummaries();
+
+        FrontalLatencyStatusText.Text =
+            "Collecting frontal per-case / " +
+            "per-fold GPU-safe backend timings...";
+
+        LateralLatencyStatusText.Text =
+            "Collecting lateral per-case / " +
+            "per-fold GPU-safe backend timings...";
+
+        foreach (var latencyCase in _latencyCases)
+        {
+            latencyCase.ResetForRun();
+        }
+
+        LatencyResultsGrid.Items.Refresh();
+    }
+
+    private void OnFoldCompleted(
+        ViewLatencyMeasurement frontal,
+        ViewLatencyMeasurement lateral)
+    {
+        // Keep collecting every scientific measurement, but do not repaint
+        // the large tables after every fold. Repainting is batched by case.
+        _frontalLatencyMeasurements.Add(frontal);
+        _lateralLatencyMeasurements.Add(lateral);
+    }
+
+    private void RefreshRunTables()
+    {
+        // Case rows keep the same object references during a run, so Refresh()
+        // is used only to redraw changed properties such as Status/Latency.
+        LatencyResultsGrid.Items.Refresh();
+
+        // Never call Items.Refresh() on a List that is also being mutated.
+        // Append newly collected measurements to the WPF-bound observable
+        // collections. WPF then receives consistent change notifications.
+        SynchronizeMeasurementRows(
+            _frontalLatencyRows,
+            _frontalLatencyMeasurements);
+
+        SynchronizeMeasurementRows(
+            _lateralLatencyRows,
+            _lateralLatencyMeasurements);
+    }
+
+    private static void SynchronizeMeasurementRows(
+        ObservableCollection<ViewLatencyMeasurement> target,
+        IReadOnlyList<ViewLatencyMeasurement> source)
+    {
+        while (target.Count < source.Count)
+        {
+            target.Add(source[target.Count]);
+        }
+
+        // This normally only matters when a run is reset/restarted, but keeps
+        // the helper correct if the source ever becomes shorter.
+        while (target.Count > source.Count)
+        {
+            target.RemoveAt(target.Count - 1);
+        }
+    }
+
+    private static void ApplySuccessfulCaseResult(
+        LatencyCase latencyCase,
+        LatencyCaseRunResult result)
+    {
+        latencyCase.LatencyValueMilliseconds =
+            result.EndToEndMilliseconds;
+
+        latencyCase.LatencyMilliseconds =
+            $"{result.EndToEndMilliseconds:F2}";
+
+        latencyCase.BackendInferenceValueMilliseconds =
+            result.BackendInferenceMilliseconds;
+
+        latencyCase.BackendInferenceMilliseconds =
+            $"{result.BackendInferenceMilliseconds:F2}";
+
+        latencyCase.Classification =
+            result.HasThrombus
+                ? "Thrombus detected"
+                : "No Thrombus detected";
+
+        latencyCase.ExecutionProvider =
+            result.ExecutionProvider;
+        latencyCase.TimingDevice =
+            result.TimingDevice;
+        latencyCase.TimingMethod =
+            result.TimingMethod;
+        latencyCase.Status = "Complete";
+    }
+
+    private static void ApplyFailedCaseResult(
+        LatencyCase latencyCase)
+    {
+        latencyCase.Classification = "Error";
+        latencyCase.LatencyMilliseconds = "-";
+        latencyCase.LatencyValueMilliseconds = null;
+        latencyCase.BackendInferenceMilliseconds = "-";
+        latencyCase.BackendInferenceValueMilliseconds = null;
+        latencyCase.ExecutionProvider = "-";
+        latencyCase.TimingDevice = "-";
+        latencyCase.TimingMethod = "-";
+        latencyCase.Status = "Failed";
+    }
+
+    private void CompleteRunUi()
+    {
+        RefreshRunTables();
+        UpdateCaseLatencySummaries();
+        UpdateViewLatencySummaries();
+        UpdateViewStatusTexts();
+
+        var failedCases =
+            _latencyCases.Count(
+                c => c.Status == "Failed");
+
+        LatencyProgressText.Text =
+            failedCases == 0
+                ? $"Completed {_latencyCases.Count} of " +
+                  $"{_latencyCases.Count} cases."
+                : $"Completed " +
+                  $"{_latencyCases.Count - failedCases} " +
+                  $"cases. {failedCases} failed.";
+
+        StartLatencyTestButton.IsEnabled = true;
+        StartLatencyTestButton.ToolTip =
+            "Run latency test again";
+    }
+
+    // ---------------------------------------------------------------------
+    // SUMMARY RENDERING
+    // ---------------------------------------------------------------------
+
+    private void UpdateCaseLatencySummaries()
+    {
+        var inferenceSummary =
+            LatencyStatistics.Calculate(
+                _latencyCases
+                    .Where(
+                        c => c
+                            .BackendInferenceValueMilliseconds
+                            .HasValue)
+                    .Select(
+                        c => c
+                            .BackendInferenceValueMilliseconds!
+                            .Value));
+
+        SetSummaryText(
+            inferenceSummary,
+            LatencyAverageText,
+            LatencyMinText,
+            LatencyMaxText);
+
+        var endToEndSummary =
+            LatencyStatistics.Calculate(
+                _latencyCases
+                    .Where(
+                        c => c
+                            .LatencyValueMilliseconds
+                            .HasValue)
+                    .Select(
+                        c => c
+                            .LatencyValueMilliseconds!
+                            .Value));
+
+        SetSummaryText(
+            endToEndSummary,
+            EndToEndAverageText,
+            EndToEndMinText,
+            EndToEndMaxText);
+
+        var executionDescriptions =
+            _latencyCases
+                .Where(
+                    c => c
+                        .BackendInferenceValueMilliseconds
+                        .HasValue)
+                .Select(
+                    c =>
+                        $"{c.ExecutionProvider} " +
+                        $"({c.TimingDevice})")
+                .Distinct(
+                    StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+        ExecutionSummaryText.Text =
+            executionDescriptions.Count > 0
+                ? string.Join(
+                    "; ",
+                    executionDescriptions)
+                : "-";
+
+        var timingMethods =
+            _latencyCases
+                .Where(
+                    c => c
+                        .BackendInferenceValueMilliseconds
+                        .HasValue)
+                .Select(c => c.TimingMethod)
+                .Where(
+                    method =>
+                        !string.IsNullOrWhiteSpace(method) &&
+                        method != "-")
+                .Distinct(
+                    StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+        TimingMethodSummaryText.Text =
+            timingMethods.Count > 0
+                ? $"Timing method: " +
+                  $"{string.Join("; ", timingMethods)}"
+                : "Timing method: -";
+    }
+
+    private void UpdateViewLatencySummaries()
+    {
+        UpdateSingleViewSummary(
+            _frontalLatencyMeasurements,
+            FrontalSequenceCountText,
+            FrontalMeasurementCountText,
+            FrontalMinText,
+            FrontalAverageText,
+            FrontalMaxText);
+
+        UpdateSingleViewSummary(
+            _lateralLatencyMeasurements,
+            LateralSequenceCountText,
+            LateralMeasurementCountText,
+            LateralMinText,
+            LateralAverageText,
+            LateralMaxText);
+
+        TotalSelectedSequenceText.Text =
+            (_latencyCases.Count * 2).ToString();
+
+        TotalModelCountText.Text =
+            _modelCount > 0
+                ? _modelCount.ToString()
+                : "-";
+
+        TotalViewMeasurementText.Text =
+            (_frontalLatencyMeasurements.Count +
+             _lateralLatencyMeasurements.Count)
+            .ToString();
+    }
+
+    private static void UpdateSingleViewSummary(
+        IReadOnlyCollection<ViewLatencyMeasurement>
+            measurements,
+        System.Windows.Controls.TextBlock
+            sequenceCountText,
+        System.Windows.Controls.TextBlock
+            measurementCountText,
+        System.Windows.Controls.TextBlock minText,
+        System.Windows.Controls.TextBlock averageText,
+        System.Windows.Controls.TextBlock maxText)
+    {
+        sequenceCountText.Text =
+            measurements
+                .Select(m => m.CaseName)
+                .Distinct(
+                    StringComparer.OrdinalIgnoreCase)
+                .Count()
+                .ToString();
+
+        measurementCountText.Text =
+            measurements.Count.ToString();
+
+        var summary =
+            LatencyStatistics.Calculate(
+                measurements.Select(
+                    m => m.LatencyMilliseconds));
+
+        SetSummaryText(
+            summary,
+            averageText,
+            minText,
+            maxText);
+    }
+
+    private static void SetSummaryText(
+        LatencyMetricSummary summary,
+        System.Windows.Controls.TextBlock averageText,
+        System.Windows.Controls.TextBlock minText,
+        System.Windows.Controls.TextBlock maxText)
+    {
+        averageText.Text =
+            summary.Mean.HasValue
+                ? $"{summary.Mean.Value:F2} ms"
+                : "- ms";
+
+        minText.Text =
+            summary.Min.HasValue
+                ? $"{summary.Min.Value:F2} ms"
+                : "- ms";
+
+        maxText.Text =
+            summary.Max.HasValue
+                ? $"{summary.Max.Value:F2} ms"
+                : "- ms";
+    }
+
+    private void UpdateViewStatusTexts()
+    {
+        FrontalLatencyStatusText.Text =
+            BuildViewStatusText(
+                "Frontal",
+                _frontalLatencyMeasurements);
+
+        LateralLatencyStatusText.Text =
+            BuildViewStatusText(
+                "Lateral",
+                _lateralLatencyMeasurements);
+    }
+
+    private static string BuildViewStatusText(
+        string viewName,
+        IReadOnlyCollection<ViewLatencyMeasurement>
+            measurements)
+    {
+        if (measurements.Count == 0)
+        {
+            return
+                $"No successful " +
+                $"{viewName.ToLowerInvariant()} " +
+                $"fold measurements were collected.";
+        }
+
+        var executionDescription =
+            string.Join(
+                "; ",
+                measurements
+                    .Select(
+                        m =>
+                            $"{m.ExecutionProvider} " +
+                            $"({m.TimingDevice}) - " +
+                            $"{m.TimingMethod}")
+                    .Distinct());
+
+        var sequenceCount =
+            measurements
+                .Select(m => m.CaseName)
+                .Distinct(
+                    StringComparer.OrdinalIgnoreCase)
+                .Count();
+
+        var foldCount =
+            measurements
+                .Select(m => m.ModelName)
+                .Distinct(
+                    StringComparer.OrdinalIgnoreCase)
+                .Count();
+
+        return
+            $"{viewName}: {sequenceCount} sequence(s), " +
+            $"{foldCount} fold(s), " +
+            $"{measurements.Count} successful fold " +
+            $"inference measurement(s). " +
+            $"Execution: {executionDescription}.";
+    }
+
+    private void ResetAfterDatasetScan()
+    {
+        _frontalLatencyMeasurements.Clear();
+        _lateralLatencyMeasurements.Clear();
+        _frontalLatencyRows.Clear();
+        _lateralLatencyRows.Clear();
+        _modelCount = 0;
+
+        LatencyResultsGrid.Items.Refresh();
+
+        LatencyCaseCountText.Text =
+            _latencyCases.Count.ToString();
+
+        TotalSelectedSequenceText.Text =
+            (_latencyCases.Count * 2).ToString();
+
+        LatencyAverageText.Text = "- ms";
+        LatencyMinText.Text = "- ms";
+        LatencyMaxText.Text = "- ms";
+
+        EndToEndAverageText.Text = "- ms";
+        EndToEndMinText.Text = "- ms";
+        EndToEndMaxText.Text = "- ms";
+
+        ExecutionSummaryText.Text = "-";
+        TimingMethodSummaryText.Text =
+            "Timing method: -";
+
+        LatencyProgressBar.Value = 0;
+
+        ResetViewLatencySummaries();
+
+        if (_latencyCases.Count > 0)
+        {
+            LatencyProgressText.Text =
+                $"{_latencyCases.Count} paired cases " +
+                $"found and ready " +
+                $"({_latencyCases.Count} frontal + " +
+                $"{_latencyCases.Count} lateral sequences).";
+
+            StartLatencyTestButton.IsEnabled = true;
+            StartLatencyTestButton.ToolTip =
+                "Start latency test";
+        }
+        else
+        {
+            LatencyProgressText.Text =
+                "No valid frontal/lateral pairs " +
+                "were found.";
+
+            StartLatencyTestButton.IsEnabled = false;
+            StartLatencyTestButton.ToolTip =
+                "No valid dataset pairs were found.";
+        }
+    }
+
+    private void ResetViewLatencySummaries()
+    {
+        FrontalSequenceCountText.Text = "0";
+        FrontalMeasurementCountText.Text = "0";
+        FrontalMinText.Text = "- ms";
+        FrontalAverageText.Text = "- ms";
+        FrontalMaxText.Text = "- ms";
+
+        LateralSequenceCountText.Text = "0";
+        LateralMeasurementCountText.Text = "0";
+        LateralMinText.Text = "- ms";
+        LateralAverageText.Text = "- ms";
+        LateralMaxText.Text = "- ms";
+
+        TotalModelCountText.Text =
+            _modelCount > 0
+                ? _modelCount.ToString()
+                : "-";
+
+        TotalViewMeasurementText.Text = "0";
+
+        FrontalLatencyStatusText.Text =
+            "Run the test to collect frontal " +
+            "per-case / per-fold timings.";
+
+        LateralLatencyStatusText.Text =
+            "Run the test to collect lateral " +
+            "per-case / per-fold timings.";
+    }
+}
