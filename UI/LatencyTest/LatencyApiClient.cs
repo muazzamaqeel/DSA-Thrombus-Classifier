@@ -10,91 +10,66 @@ public sealed class LatencyApiClient
 {
     private static readonly HttpClient Client = new()
     {
-        BaseAddress = new Uri(
-            $"http://{Services.Configuration.AiServiceUrl}/"),
+        BaseAddress = new Uri($"http://{Services.Configuration.AiServiceUrl}/"),
         Timeout = TimeSpan.FromMinutes(5)
     };
 
-    public async Task ConfigureExecutionUnitAsync(
-        string executionUnit)
+    public async Task<LatencyExecutionResponse> ConfigureExecutionAsync(
+        string mode, string modelFolder)
     {
-        var request = new
-        {
-            ExecutionUnit = executionUnit
-        };
-
         using var response = await PostAsync(
-            request,
-            "/AiService/LatencyExecutionUnit");
+            "/AiService/LatencyExecutionMode",
+            new { Mode = mode, ModelFolder = modelFolder });
+
+        var json = await response.Content.ReadAsStringAsync();
+        return JsonConvert.DeserializeObject<LatencyExecutionResponse>(json)
+               ?? throw new InvalidOperationException(
+                   "Invalid latency execution-mode response.");
     }
 
-    public async Task PrepareImagesAsync(
-        string fileFrontal,
-        string fileLateral)
-    {
-        var request = new
+    public Task PrepareImagesAsync(string frontal, string lateral) =>
+        PostNoContentAsync("/AiService/LatencyPrepareImages", new
         {
-            PathFrontal = fileFrontal,
-            PathLateral = fileLateral
-        };
+            PathFrontal = frontal,
+            PathLateral = lateral
+        });
 
-        using var response = await PostAsync(
-            request,
-            "/AiService/LatencyPrepareImages");
-    }
-
-    public async Task ReleasePreparedImagesAsync(
-        string fileFrontal,
-        string fileLateral)
-    {
-        var request = new
+    public Task ReleasePreparedImagesAsync(string frontal, string lateral) =>
+        PostNoContentAsync("/AiService/LatencyReleaseImages", new
         {
-            PathFrontal = fileFrontal,
-            PathLateral = fileLateral
-        };
-
-        using var response = await PostAsync(
-            request,
-            "/AiService/LatencyReleaseImages");
-    }
+            PathFrontal = frontal,
+            PathLateral = lateral
+        });
 
     public async Task<LatencyClassificationResponse> ClassifyAsync(
-        string modelFrontal,
-        string modelLateral,
-        string fileFrontal,
-        string fileLateral)
+        string modelName, string frontal, string lateral)
     {
-        var request = new
-        {
-            PathFrontal = fileFrontal,
-            PathLateral = fileLateral,
-            ModelFrontal = modelFrontal,
-            ModelLateral = modelLateral
-        };
-
         using var response = await PostAsync(
-            request,
-            "/AiService/LatencyClassification");
+            "/AiService/LatencyClassification",
+            new
+            {
+                ModelName = modelName,
+                PathFrontal = frontal,
+                PathLateral = lateral
+            });
 
-        var content = await response.Content.ReadAsStringAsync();
-
-        return JsonConvert.DeserializeObject<LatencyClassificationResponse>(
-                   content)
+        var json = await response.Content.ReadAsStringAsync();
+        return JsonConvert.DeserializeObject<LatencyClassificationResponse>(json)
                ?? throw new InvalidOperationException(
-                   "Failed to convert latency classification response");
+                   "Invalid latency classification response.");
     }
 
-    private static async Task<HttpResponseMessage> PostAsync(
-        object request,
-        string uri)
+    private static async Task PostNoContentAsync(string uri, object payload)
     {
-        var json = JsonConvert.SerializeObject(request);
-        using var data =
-            new StringContent(json, Encoding.UTF8, "application/json");
+        using var response = await PostAsync(uri, payload);
+    }
 
+    private static async Task<HttpResponseMessage> PostAsync(string uri, object payload)
+    {
+        using var data = new StringContent(
+            JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
         var response = await Client.PostAsync(uri, data);
         response.EnsureSuccessStatusCode();
-
         return response;
     }
 }

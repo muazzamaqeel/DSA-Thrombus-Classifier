@@ -9,167 +9,84 @@ namespace UI.LatencyTest;
 
 public sealed class LatencyTestRunner
 {
-    private readonly LatencyApiClient _latencyApiClient;
+    private readonly LatencyApiClient _api = new();
 
-    public LatencyTestRunner(
-        LatencyApiClient? latencyApiClient = null)
-    {
-        _latencyApiClient =
-            latencyApiClient ?? new LatencyApiClient();
-    }
-
-    public Task ConfigureExecutionUnitAsync(
-        string executionUnit)
-    {
-        return _latencyApiClient.ConfigureExecutionUnitAsync(
-            executionUnit);
-    }
+    public Task<LatencyExecutionResponse> ConfigureExecutionAsync(
+        string mode, string modelFolder) =>
+        _api.ConfigureExecutionAsync(mode, modelFolder);
 
     public async Task<LatencyCaseRunResult> RunCaseAsync(
         LatencyCase latencyCase,
         IReadOnlyCollection<string> modelNames,
-        double classificationThreshold,
-        Action<ViewLatencyMeasurement, ViewLatencyMeasurement>?
-            onFoldCompleted = null)
+        double threshold)
     {
-        // PREPARE:
-        // Reuses Classificator.prepare_images(), but the latency-only endpoint
-        // returns no preview-image JSON. This keeps large runs lighter.
-        await _latencyApiClient.PrepareImagesAsync(
-            latencyCase.FrontalPath,
-            latencyCase.LateralPath);
+        await _api.PrepareImagesAsync(
+            latencyCase.FrontalPath, latencyCase.LateralPath);
 
         try
         {
-            // MEASURE END-TO-END CLASSIFICATION PATH:
-            var caseStopwatch = Stopwatch.StartNew();
-
             var responses = new List<ClassificationResponse>();
-            var backendInferenceTotalMilliseconds = 0.0;
+            var frontal = new List<ViewLatencyMeasurement>();
+            var lateral = new List<ViewLatencyMeasurement>();
+            var totalMs = 0.0;
+            var execution = "-";
+            var device = "-";
 
-            var executionProvider = "-";
-            var timingDevice = "-";
-            var timingMethod = "-";
-
-            // MEASURE EVERY FOLD SEQUENTIALLY.
-            // GPU inference is intentionally not parallelized because concurrent
-            // folds would contend for the GPU and corrupt latency comparability.
+            // Sequential by design: parallel GPU folds would distort latency.
             foreach (var modelName in modelNames)
             {
-                var response = await _latencyApiClient.ClassifyAsync(
+                var response = await _api.ClassifyAsync(
                     modelName,
-                    modelName,
-                    latencyCase.FrontalPath,
-                    latencyCase.LateralPath);
+                    latencyCase.FrontalPath, latencyCase.LateralPath);
 
                 responses.Add(response);
-                backendInferenceTotalMilliseconds +=
-                    response.InferenceMilliseconds;
+                totalMs += response.FrontalInferenceMilliseconds +
+                           response.LateralInferenceMilliseconds;
+                execution = response.ExecutionProvider?.ToUpperInvariant() ?? "CPU";
+                device = response.TimingDevice ?? "unknown";
 
-                executionProvider =
-                    NormalizeExecutionProvider(response);
-                timingDevice =
-                    string.IsNullOrWhiteSpace(response.TimingDevice)
-                        ? "unknown"
-                        : response.TimingDevice;
-                timingMethod =
-                    string.IsNullOrWhiteSpace(response.TimingMethod)
-                        ? "unknown"
-                        : response.TimingMethod;
+                frontal.Add(new ViewLatencyMeasurement
+                {
+                    CaseName = latencyCase.CaseName,
+                    ModelName = modelName,
+                    LatencyMilliseconds = response.FrontalInferenceMilliseconds,
+                    ExecutionProvider = execution
+                });
 
-                var frontalMeasurement =
-                    new ViewLatencyMeasurement
-                    {
-                        CaseName = latencyCase.CaseName,
-                        ModelName = modelName,
-                        LatencyMilliseconds =
-                            response.FrontalInferenceMilliseconds,
-                        ExecutionProvider = executionProvider,
-                        TimingDevice = timingDevice,
-                        TimingMethod = timingMethod,
-                        Status = "Complete"
-                    };
-
-                var lateralMeasurement =
-                    new ViewLatencyMeasurement
-                    {
-                        CaseName = latencyCase.CaseName,
-                        ModelName = modelName,
-                        LatencyMilliseconds =
-                            response.LateralInferenceMilliseconds,
-                        ExecutionProvider = executionProvider,
-                        TimingDevice = timingDevice,
-                        TimingMethod = timingMethod,
-                        Status = "Complete"
-                    };
-
-                onFoldCompleted?.Invoke(
-                    frontalMeasurement,
-                    lateralMeasurement);
+                lateral.Add(new ViewLatencyMeasurement
+                {
+                    CaseName = latencyCase.CaseName,
+                    ModelName = modelName,
+                    LatencyMilliseconds = response.LateralInferenceMilliseconds,
+                    ExecutionProvider = execution
+                });
             }
 
-            // AGGREGATE:
-            // Reuse the ORIGINAL thesis result interpreter.
-            var averages =
-                ResultInterpreter.CalculateCombinedResult(responses);
-
-            var resultInterpreter = new ResultInterpreter
-            {
-                Threshold = classificationThreshold
-            };
-
-            var hasThrombus =
-                resultInterpreter.HasThrombus(averages.Item1);
-
-            caseStopwatch.Stop();
+            var combined = ResultInterpreter.CalculateCombinedResult(responses);
+            var hasThrombus = new ResultInterpreter { Threshold = threshold }
+                .HasThrombus(combined.Item1);
 
             return new LatencyCaseRunResult
             {
                 HasThrombus = hasThrombus,
-                EndToEndMilliseconds =
-                    caseStopwatch.Elapsed.TotalMilliseconds,
-                BackendInferenceMilliseconds =
-                    backendInferenceTotalMilliseconds,
-                ExecutionProvider = executionProvider,
-                TimingDevice = timingDevice,
-                TimingMethod = timingMethod
+                InferenceMilliseconds = totalMs,
+                ExecutionProvider = execution,
+                TimingDevice = device,
+                FrontalMeasurements = frontal,
+                LateralMeasurements = lateral
             };
         }
         finally
         {
-            // Critical for large datasets: the original Classificator cache has
-            // no built-in maximum size. Evict this case after its five folds.
             try
             {
-                await _latencyApiClient.ReleasePreparedImagesAsync(
-                    latencyCase.FrontalPath,
-                    latencyCase.LateralPath);
+                await _api.ReleasePreparedImagesAsync(
+                    latencyCase.FrontalPath, latencyCase.LateralPath);
             }
-            catch (Exception cleanupException)
+            catch (Exception error)
             {
-                Debug.WriteLine(
-                    $"Latency cache cleanup failed: {cleanupException.Message}");
+                Debug.WriteLine($"Latency cache cleanup failed: {error.Message}");
             }
         }
-    }
-
-    private static string NormalizeExecutionProvider(
-        LatencyClassificationResponse response)
-    {
-        if (!string.IsNullOrWhiteSpace(
-                response.ExecutionProvider))
-        {
-            return response.ExecutionProvider.ToUpperInvariant();
-        }
-
-        if (!string.IsNullOrWhiteSpace(response.TimingDevice) &&
-            response.TimingDevice.StartsWith(
-                "cuda",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return "GPU";
-        }
-
-        return "CPU";
     }
 }

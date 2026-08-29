@@ -5,8 +5,7 @@ namespace UI.LatencyTest;
 
 public static class LatencyStatistics
 {
-    public static LatencyMetricSummary Calculate(
-        IEnumerable<double> values)
+    public static LatencyMetricSummary Calculate(IEnumerable<double> values)
     {
         var count = 0;
         var sum = 0.0;
@@ -21,16 +20,13 @@ public static class LatencyStatistics
             max = Math.Max(max, value);
         }
 
-        if (count == 0)
-        {
-            return new LatencyMetricSummary();
-        }
-
-        return new LatencyMetricSummary
-        {
-            Mean = sum / count,
-            Min = min,
-            Max = max
-        };
+        return count == 0
+            ? new LatencyMetricSummary()
+            : new LatencyMetricSummary
+            {
+                Mean = sum / count,
+                Min = min,
+                Max = max
+            };
     }
 }
