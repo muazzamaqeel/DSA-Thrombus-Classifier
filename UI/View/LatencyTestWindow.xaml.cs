@@ -24,6 +24,9 @@ public partial class LatencyTestWindow : Window
     private readonly ObservableCollection<LatencyCase> _cases = new();
     private readonly ObservableCollection<ViewLatencyMeasurement> _frontal = new();
     private readonly ObservableCollection<ViewLatencyMeasurement> _lateral = new();
+    private bool _isRunning;
+    private bool _isScanning;
+    private bool _devicesLoaded;
 
     public static ICommand OpenCommand { get; } =
         new UI.RelayCommand<Window>(owner =>
@@ -38,14 +41,53 @@ public partial class LatencyTestWindow : Window
     public LatencyTestWindow()
     {
         InitializeComponent();
+        InitializeResultExportControls();
+        LatencyProgressBar.IsIndeterminate = false;
+        LatencyProgressBar.Minimum = 0;
+        LatencyProgressBar.Maximum = 100;
+        LatencyExecutionModeComboBox.IsEnabled = false;
+        Loaded += LoadBackendDevices;
         LatencyResultsGrid.ItemsSource = _cases;
         FrontalLatencyGrid.ItemsSource = _frontal;
         LateralLatencyGrid.ItemsSource = _lateral;
         ResetSummaries();
     }
 
+    private async void LoadBackendDevices(object sender, RoutedEventArgs e)
+    {
+        Loaded -= LoadBackendDevices;
+        try
+        {
+            var info = await _runner.GetInfoAsync();
+            LatencyExecutionModeComboBox.Items.Clear();
+            foreach (var device in info.Devices)
+                LatencyExecutionModeComboBox.Items.Add(new ComboBoxItem
+                {
+                    Content = $"GPU {device.Index}: {device.Name}", Tag = device.Index
+                });
+            LatencyExecutionModeComboBox.Items.Add(new ComboBoxItem { Content = "CPU", Tag = -1 });
+            LatencyExecutionModeComboBox.SelectedIndex = 0;
+            LatencyExecutionModeComboBox.IsEnabled = true;
+            LatencyExecutionModeComboBox.ToolTip = "Select the actual backend device used for inference.";
+            ExecutionSummaryText.TextWrapping = TextWrapping.Wrap;
+            _devicesLoaded = true;
+            StartLatencyTestButton.IsEnabled = _cases.Count > 0 && !_isScanning;
+            if (info.Devices.Count == 0)
+                LatencyProgressText.Text = "CUDA is unavailable in this backend. CPU is selected.";
+        }
+        catch (Exception error)
+        {
+            StartLatencyTestButton.IsEnabled = false;
+            LatencyProgressText.Text = "Update/restart the backend before starting the test.";
+            MessageBox.Show(this, error.Message, "Latency Test - Backend", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
     private async void SelectLatencyDataset_Click(object sender, RoutedEventArgs e)
     {
+        if (_isRunning || _isScanning)
+            return;
+
         var dialog = new CommonOpenFileDialog
         {
             IsFolderPicker = true,
@@ -55,11 +97,32 @@ public partial class LatencyTestWindow : Window
         if (dialog.ShowDialog() != CommonFileDialogResult.Ok)
             return;
 
-        LatencyDatasetPathText.Text = dialog.FileName;
+        _isScanning = true;
+        var exportWasEnabled = _csvExportButton.IsEnabled;
+        _csvExportButton.IsEnabled = false;
         LatencyProgressText.Text = "Scanning dataset...";
         StartLatencyTestButton.IsEnabled = false;
 
-        var found = await Task.Run(() => _scanner.Scan(dialog.FileName));
+        IReadOnlyList<LatencyCase> found;
+        try
+        {
+            found = await Task.Run(() => _scanner.Scan(dialog.FileName));
+        }
+        catch (Exception error)
+        {
+            _csvExportButton.IsEnabled = exportWasEnabled;
+            StartLatencyTestButton.IsEnabled = _cases.Count > 0 && _devicesLoaded;
+            LatencyProgressText.Text = "Dataset scan failed.";
+            MessageBox.Show(this, error.Message, "Latency Test",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
+        finally
+        {
+            _isScanning = false;
+        }
+
+        LatencyDatasetPathText.Text = dialog.FileName;
         _cases.Clear();
         foreach (var item in found)
             _cases.Add(item);
@@ -70,7 +133,7 @@ public partial class LatencyTestWindow : Window
         LatencyProgressBar.Value = 0;
         LatencyResultsGrid.Items.Refresh();
 
-        StartLatencyTestButton.IsEnabled = _cases.Count > 0;
+        StartLatencyTestButton.IsEnabled = _cases.Count > 0 && _devicesLoaded;
         StartLatencyTestButton.ToolTip = _cases.Count > 0
             ? "Start latency test"
             : "No valid dataset pairs were found.";
@@ -84,14 +147,17 @@ public partial class LatencyTestWindow : Window
 
     private async void StartLatencyTestButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_isRunning || _isScanning)
+            return;
+
         if (!TryGetPaperModels(out var models))
             return;
 
         BeginRun();
 
-        var requestedMode =
-            (LatencyExecutionModeComboBox.SelectedItem as ComboBoxItem)?
-                .Content?.ToString() ?? "GPU";
+        var selected = LatencyExecutionModeComboBox.SelectedItem as ComboBoxItem;
+        var deviceIndex = selected?.Tag is int index ? index : -1;
+        var requestedMode = deviceIndex >= 0 ? "GPU" : "CPU";
 
         LatencyProgressText.Text =
             $"Configuring {requestedMode} execution...";
@@ -100,13 +166,14 @@ public partial class LatencyTestWindow : Window
         {
             var vm = (MainWindowViewModel)DataContext;
             var execution = await _runner.ConfigureExecutionAsync(
-                requestedMode, vm.ModelSelectionFolder);
+                requestedMode, vm.ModelSelectionFolder, Math.Max(deviceIndex, 0));
 
             ExecutionSummaryText.Text =
                 $"{execution.ExecutionProvider} ({execution.TimingDevice})";
         }
         catch (Exception error)
         {
+            _isRunning = false;
             StartLatencyTestButton.IsEnabled = true;
             LatencyExecutionModeComboBox.IsEnabled = true;
             LatencyProgressText.Text = "Execution-device configuration failed.";
@@ -152,6 +219,8 @@ public partial class LatencyTestWindow : Window
             await Dispatcher.Yield(DispatcherPriority.Background);
         }
 
+        _isRunning = false;
+        _csvExportButton.IsEnabled = _cases.Count > 0;
         StartLatencyTestButton.IsEnabled = true;
         LatencyExecutionModeComboBox.IsEnabled = true;
         StartLatencyTestButton.ToolTip = "Run latency test again";
@@ -172,6 +241,8 @@ public partial class LatencyTestWindow : Window
     private bool TryGetPaperModels(out IReadOnlyCollection<string> models)
     {
         models = PaperFoldModelNames;
+        if (!_devicesLoaded)
+            return Warn("Backend GPU information is not ready. Verify that the updated backend is running.");
 
         if (_cases.Count == 0)
             return Warn("No dataset cases are available.");
@@ -217,6 +288,8 @@ public partial class LatencyTestWindow : Window
 
     private void BeginRun()
     {
+        _isRunning = true;
+        _csvExportButton.IsEnabled = false;
         StartLatencyTestButton.IsEnabled = false;
         LatencyExecutionModeComboBox.IsEnabled = false;
         LatencyProgressBar.Value = 0;
@@ -229,6 +302,13 @@ public partial class LatencyTestWindow : Window
 
     private static void ApplyResult(LatencyCase latencyCase, LatencyCaseRunResult result)
     {
+        latencyCase.TimingMethod = result.TimingMethod;
+        latencyCase.ModelResidency = result.ModelResidency;
+        latencyCase.EnvironmentJson = result.EnvironmentJson;
+        latencyCase.PreparationJson = result.PreparationJson;
+        latencyCase.ClientCaseMilliseconds = result.ClientCaseMilliseconds;
+        latencyCase.ModelOutput = result.ModelOutput;
+        latencyCase.Threshold = result.Threshold;
         latencyCase.Classification = result.HasThrombus
             ? "Thrombus detected"
             : "No Thrombus detected";

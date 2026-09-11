@@ -35,7 +35,7 @@ class Classificator:
         else:
             print("## CUDA is not available on this machine. ##")
 
-    def load_models(self, folder="models"):
+    def load_models(self, folder="models", device_override=None):
         model_f = os.path.join(folder, "frontal")
         model_l = os.path.join(folder, "lateral")
 
@@ -44,29 +44,38 @@ class Classificator:
         self.models_lateral = {}
         self.models_frontal = {}
 
-        if CPU_ONLY:
+        # Choose one device deterministically and reset both state fields together.
+        # Latency evaluation supplies an explicit device and never falls back to CPU.
+        if device_override is not None:
+            device = torch.device(device_override)
+            if device.type == "cuda":
+                if not torch.cuda.is_available():
+                    raise ValueError("CUDA is unavailable in this Python environment.")
+                index = device.index if device.index is not None else 0
+                if index < 0 or index >= torch.cuda.device_count():
+                    raise ValueError(f"CUDA device index {index} is unavailable.")
+                device = torch.device(f"cuda:{index}")
+            elif device.type != "cpu":
+                raise ValueError("Only CPU and CUDA devices are supported.")
+        elif CPU_ONLY or not torch.cuda.is_available():
             device = torch.device("cpu")
-            self.run_on_cuda = False
         else:
-            device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-            # Takes the last cuda device
-            for d in range(torch.cuda.device_count()):
-                device = torch.device(f"cuda:{d}")
-                (free, total) = torch.cuda.mem_get_info(device)
-                gb_total = total / 1073741824
-                gb_free = total / 1073741824
-                print(f"Device {device} has {gb_total} total RAM. Currently free: {gb_free}")
-                if gb_total < MINIMUM_FREE_GPU_VRAM_GB:
-                    print(f"This is not enough, we need at least {MINIMUM_FREE_GPU_VRAM_GB} GB.")
-                    device = torch.device("cpu")
-                else:
-                    device = torch.device(f"cuda:{d}")
-                    torch.cuda.set_device(device)
-                    self.run_on_cuda = True
+            device = torch.device("cuda:0")
+            free, total = torch.cuda.mem_get_info(device)
+            print(f"Device {device}: total {total / 1073741824:.2f} GiB, "
+                  f"free {free / 1073741824:.2f} GiB")
+            if free / 1073741824 < MINIMUM_FREE_GPU_VRAM_GB:
+                device = torch.device("cpu")
+
+        self.run_on_cuda = device.type == "cuda"
+        if self.run_on_cuda:
+            torch.cuda.set_device(device)
 
         self.device = device
         print(f"Running on {device}")
 
+        # Stage checkpoints on CPU. The latency service can retain the full ensemble
+        # on the selected GPU; normal classification still moves one model at a time.
         # Load Checkpoints:
         dir_list_f = os.listdir(model_f)
         dir_list_l = os.listdir(model_l)
@@ -74,9 +83,9 @@ class Classificator:
         for m_f_orig in dir_list_f:
             m_f = os.path.join(model_f, m_f_orig)
             model_frontal = CnnLstmModel(512, 3, 1, True, device)
-            checkpoint = torch.load(m_f, map_location=device)
+            checkpoint = torch.load(m_f, map_location="cpu")
             model_frontal.load_state_dict(checkpoint['model_state_dict'])
-            model_frontal.to(device)
+            model_frontal.cpu()
             model_frontal.eval()
             self.models_frontal[m_f_orig] = model_frontal
 
@@ -84,9 +93,9 @@ class Classificator:
         for m_l_orig in dir_list_l:
             m_l = os.path.join(model_l, m_l_orig)
             model_lateral = CnnLstmModel(512, 3, 1, True, device)
-            checkpoint = torch.load(m_l, map_location=device)
+            checkpoint = torch.load(m_l, map_location="cpu")
             model_lateral.load_state_dict(checkpoint['model_state_dict'])
-            model_lateral.to(device)
+            model_lateral.cpu()
             model_lateral.eval()
             self.models_lateral[m_l_orig] = model_lateral
 

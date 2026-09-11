@@ -14,31 +14,53 @@ public sealed class LatencyApiClient
         Timeout = TimeSpan.FromMinutes(5)
     };
 
+    private string? _runId;
+    public const string RequiredBackendRevision = "latency-v4-fp32";
+
+    public async Task<LatencyBackendInfo> GetInfoAsync()
+    {
+        using var response = await Client.GetAsync("/AiService/LatencyInfo");
+        response.EnsureSuccessStatusCode();
+        var info = JsonConvert.DeserializeObject<LatencyBackendInfo>(await response.Content.ReadAsStringAsync())
+            ?? throw new InvalidOperationException("Invalid backend information response.");
+        if (info.BackendRevision != RequiredBackendRevision)
+            throw new InvalidOperationException("Update and restart the configured Python backend with the v4 files.");
+        return info;
+    }
+
     public async Task<LatencyExecutionResponse> ConfigureExecutionAsync(
-        string mode, string modelFolder)
+        string mode, string modelFolder, int deviceIndex = 0)
     {
         using var response = await PostAsync(
             "/AiService/LatencyExecutionMode",
-            new { Mode = mode, ModelFolder = modelFolder });
+            new { Mode = mode, ModelFolder = modelFolder, DeviceIndex = deviceIndex });
 
         var json = await response.Content.ReadAsStringAsync();
-        return JsonConvert.DeserializeObject<LatencyExecutionResponse>(json)
+        var execution = JsonConvert.DeserializeObject<LatencyExecutionResponse>(json)
                ?? throw new InvalidOperationException(
                    "Invalid latency execution-mode response.");
+        if (execution.BackendRevision != RequiredBackendRevision || string.IsNullOrWhiteSpace(execution.RunId))
+            throw new InvalidOperationException("Update and restart the configured Python backend with the v4 files.");
+        _runId = execution.RunId;
+        return execution;
     }
 
-    public Task PrepareImagesAsync(string frontal, string lateral) =>
-        PostNoContentAsync("/AiService/LatencyPrepareImages", new
+    public async Task<LatencyPreparationResponse> PrepareImagesAsync(string frontal, string lateral)
+    {
+        using var response = await PostAsync("/AiService/LatencyPrepareImages", new
         {
-            PathFrontal = frontal,
-            PathLateral = lateral
+            PathFrontal = frontal, PathLateral = lateral, RunId = _runId
         });
+        return JsonConvert.DeserializeObject<LatencyPreparationResponse>(await response.Content.ReadAsStringAsync())
+            ?? throw new InvalidOperationException("Invalid preparation response.");
+    }
 
     public Task ReleasePreparedImagesAsync(string frontal, string lateral) =>
         PostNoContentAsync("/AiService/LatencyReleaseImages", new
         {
             PathFrontal = frontal,
-            PathLateral = lateral
+            PathLateral = lateral,
+            RunId = _runId
         });
 
     public async Task<LatencyClassificationResponse> ClassifyAsync(
@@ -50,7 +72,8 @@ public sealed class LatencyApiClient
             {
                 ModelName = modelName,
                 PathFrontal = frontal,
-                PathLateral = lateral
+                PathLateral = lateral,
+                RunId = _runId
             });
 
         var json = await response.Content.ReadAsStringAsync();
@@ -69,7 +92,13 @@ public sealed class LatencyApiClient
         using var data = new StringContent(
             JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
         var response = await Client.PostAsync(uri, data);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var message = await response.Content.ReadAsStringAsync();
+            var status = response.StatusCode;
+            response.Dispose();
+            throw new HttpRequestException($"Backend returned {status}: {message}");
+        }
         return response;
     }
 }
