@@ -7,12 +7,13 @@ class ImageUtils(object):
 
     @staticmethod
     def fillBlackBorderWithRandomNoise(image=np.ndarray((0, 0, 0)), mean=193):
-        # create mask of outer black border:
-        mask_image = np.ones((image.shape[0], image.shape[0]))
-        mask = np.logical_not(np.logical_and(image[:, :, 0], mask_image))
+        # Create a mask from the actual first-frame dimensions.
+        # The previous implementation incorrectly assumed width == height by
+        # creating a (image.shape[0], image.shape[0]) mask. That fails for
+        # valid rectangular inputs such as 512 x 507.
+        mask = np.logical_not(image[:, :, 0].astype(bool))
 
-        # create random filling of black border:
+        # Fill the black border with the configured mean value.
         noise_array = np.full(image[mask].shape, mean, np.uint8)
-        # fill black border with random noise
         image[mask] = noise_array
         return image
