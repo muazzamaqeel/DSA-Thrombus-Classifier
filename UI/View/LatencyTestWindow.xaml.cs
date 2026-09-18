@@ -46,7 +46,7 @@ public partial class LatencyTestWindow : Window
     {
         InitializeComponent();
         InitializeResultExportControls();
-        Title = "Latency Test - v6 single pass";
+        Title = "Latency Test - v6 single pass | GUI sync fix";
         Closing += OnLatencyWindowClosing;
         LatencyProgressBar.IsIndeterminate = false;
         LatencyProgressBar.Minimum = 0;

@@ -50,8 +50,9 @@ def create_latency_blueprint(classificator):
         content = request.get_json(silent=True)
         if not isinstance(content, dict):
             raise ValueError('A JSON object is required.')
-        if any(name not in content for name in required):
-            raise ValueError('Missing required request fields.')
+        missing = [name for name in required if name not in content]
+        if missing:
+            raise ValueError('Missing required request field(s): ' + ', '.join(missing))
         return content
 
     @blueprint.route('/AiService/LatencyInfo', methods=['GET'])
@@ -62,14 +63,19 @@ def create_latency_blueprint(classificator):
     @blueprint.route('/AiService/LatencyExecutionMode', methods=['POST'])
     @guarded
     def execution_mode():
-        content = body('Mode', 'ModelFolder', 'RunId')
+        # RunId was added by the isolated v6 UI. Keep it optional so an older
+        # UI cannot fail with HTTP 400 solely because the UI/backend are mixed.
+        # configure_execution creates a run id when the client does not send one.
+        content = body('Mode', 'ModelFolder')
         if service._run_id is not None:
             return flask.Response('A latency run is already active.', status=409)
         try:
-            return flask.jsonify(service.configure_execution(content['Mode'], content['ModelFolder'],
-                                 content.get('DeviceIndex', 0), content['RunId']))
+            return flask.jsonify(service.configure_execution(
+                content['Mode'], content['ModelFolder'],
+                content.get('DeviceIndex', 0), content.get('RunId')))
         except Exception:
-            service.end_run(content['RunId'])
+            # configure_execution may already have generated a run id.
+            service.end_run(service._run_id)
             raise
 
     @blueprint.route('/AiService/LatencyCancel', methods=['POST'])

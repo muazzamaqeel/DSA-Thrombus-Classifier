@@ -20,28 +20,40 @@ public sealed class LatencyApiClient
     public async Task<LatencyBackendInfo> GetInfoAsync()
     {
         using var response = await Client.GetAsync("/AiService/LatencyInfo");
-        response.EnsureSuccessStatusCode();
+        await ThrowBackendErrorAsync(response, "/AiService/LatencyInfo");
         var info = JsonConvert.DeserializeObject<LatencyBackendInfo>(await response.Content.ReadAsStringAsync())
             ?? throw new InvalidOperationException("Invalid backend information response.");
         if (info.BackendRevision != RequiredBackendRevision)
-            throw new InvalidOperationException("Update and restart the configured Python backend with the v6 files.");
+            throw new InvalidOperationException(
+                $"Backend/UI version mismatch. Backend reports '{info.BackendRevision ?? "<missing>"}', " +
+                $"but this UI requires '{RequiredBackendRevision}'. Restart the backend from this project.");
         return info;
     }
 
     public async Task<LatencyExecutionResponse> ConfigureExecutionAsync(
         string mode, string modelFolder, int deviceIndex = 0)
     {
-        _runId = Guid.NewGuid().ToString("N");
+        var requestedRunId = Guid.NewGuid().ToString("N");
+        _runId = null;
+
         using var response = await PostAsync(
             "/AiService/LatencyExecutionMode",
-            new { Mode = mode, ModelFolder = modelFolder, DeviceIndex = deviceIndex, RunId = _runId });
+            new
+            {
+                Mode = mode,
+                ModelFolder = modelFolder,
+                DeviceIndex = deviceIndex,
+                RunId = requestedRunId
+            });
 
         var json = await response.Content.ReadAsStringAsync();
         var execution = JsonConvert.DeserializeObject<LatencyExecutionResponse>(json)
                ?? throw new InvalidOperationException(
                    "Invalid latency execution-mode response.");
         if (execution.BackendRevision != RequiredBackendRevision || string.IsNullOrWhiteSpace(execution.RunId))
-            throw new InvalidOperationException("Update and restart the configured Python backend with the v6 files.");
+            throw new InvalidOperationException(
+                $"Backend/UI version mismatch. Expected '{RequiredBackendRevision}'. " +
+                "Restart the backend from the same project build.");
         _runId = execution.RunId;
         return execution;
     }
@@ -103,13 +115,28 @@ public sealed class LatencyApiClient
         using var data = new StringContent(
             JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
         var response = await Client.PostAsync(uri, data);
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            var message = await response.Content.ReadAsStringAsync();
-            var status = response.StatusCode;
-            response.Dispose();
-            throw new HttpRequestException($"Backend returned {status}: {message}");
+            await ThrowBackendErrorAsync(response, uri);
+            return response;
         }
-        return response;
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
+    }
+
+    private static async Task ThrowBackendErrorAsync(HttpResponseMessage response, string uri)
+    {
+        if (response.IsSuccessStatusCode)
+            return;
+
+        var message = (await response.Content.ReadAsStringAsync()).Trim();
+        if (string.IsNullOrWhiteSpace(message))
+            message = "The backend returned no error details.";
+
+        throw new HttpRequestException(
+            $"{uri} returned HTTP {(int)response.StatusCode} ({response.ReasonPhrase}). {message}");
     }
 }
