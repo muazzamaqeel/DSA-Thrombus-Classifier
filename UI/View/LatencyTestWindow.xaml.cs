@@ -1,3 +1,4 @@
+
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -46,7 +47,7 @@ public partial class LatencyTestWindow : Window
     {
         InitializeComponent();
         InitializeResultExportControls();
-        Title = "Latency Test - v6 single pass | GUI sync fix";
+        Title = "Latency Test - v7 GPU batched single pass";
         Closing += OnLatencyWindowClosing;
         LatencyProgressBar.IsIndeterminate = false;
         LatencyProgressBar.Minimum = 0;

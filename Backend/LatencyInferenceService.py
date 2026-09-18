@@ -1,3 +1,4 @@
+
 import hashlib
 import json
 import os
@@ -40,7 +41,6 @@ class LatencyInferenceService:
         self._prepared = {}
         self._run_id = None
         self._cancel = threading.Event()
-        self._warmed = set()
         self._environment_json = ''
         self._device_label = 'cpu'
 
@@ -90,7 +90,6 @@ class LatencyInferenceService:
             self._save_settings()
             self._cancel.clear()
             self._prepared.clear()
-            self._warmed.clear()
             self.classificator.preparedImages.clear()
             mode = str(mode).upper()
             if mode not in ('CPU', 'GPU'):
@@ -105,9 +104,12 @@ class LatencyInferenceService:
             expected = {f'fold{i}.pt' for i in range(1, 6)}
             if set(self.classificator.models_frontal) != expected:
                 raise ValueError('Latency requires exactly fold1.pt through fold5.pt in both views.')
-            # Disable autotuning: changing temporal sizes must not trigger costly searches.
+            # GPU timing uses an excluded warm-up immediately before every measured
+            # pass. This lets cuDNN select an efficient algorithm for that exact
+            # input shape without charging autotuning or GPU clock ramp-up to the
+            # measured single pass.
             torch.set_num_threads(CPU_THREADS)
-            torch.backends.cudnn.benchmark = False
+            torch.backends.cudnn.benchmark = mode == 'GPU'
             if hasattr(torch.backends.cuda.matmul, 'fp32_precision'):
                 torch.backends.fp32_precision = 'ieee'
                 torch.backends.cuda.matmul.fp32_precision = 'ieee'
@@ -125,8 +127,10 @@ class LatencyInferenceService:
                     del probe
             info = get_latency_info()
             info.update({'Precision': 'FP32 (TF32 disabled)', 'SelectedDevice': str(device),
-                         'CudnnBenchmark': False, 'CnnGroupsPerBatch': CNN_GROUPS_PER_BATCH,
-                         'WarmupPolicy': '1 per model/view on first case only', 'TimedRuns': 1,
+                         'CudnnBenchmark': bool(torch.backends.cudnn.benchmark),
+                         'CnnGroupsPerBatch': CNN_GROUPS_PER_BATCH,
+                         'WarmupPolicy': '1 excluded warm-up immediately before every measured model/view pass',
+                         'TimedRuns': 1,
                          'TimingScope': 'Sum of resident-input view classification wall times plus client soft-vote; '
                                         'excludes disk loading, preprocessing, transfers, warm-up and HTTP.',
                          'ModelSha256': {f'{view}/{name}': file_sha256(path, self._check_cancel)
@@ -212,10 +216,11 @@ class LatencyInferenceService:
             if device.type == 'cuda':
                 torch.cuda.synchronize(device)
             input_ms = (time.perf_counter() - transfer_start) * 1000.0
-            key = (view, model_name)
-            result = run_timed_model(model, image, device, warmup_runs=0 if key in self._warmed else 1,
+            # Warm the exact model/input shape directly before timing. This keeps
+            # CUDA clocks and cuDNN algorithm selection out of the single measured
+            # pass on both desktop and laptop GPUs.
+            result = run_timed_model(model, image, device, warmup_runs=1,
                                      cancel_check=self._check_cancel)
-            self._warmed.add(key)
             result.update({'CheckpointLoadMilliseconds': load_ms, 'ModelTransferMilliseconds': model_ms,
                            'InputTransferMilliseconds': input_ms, 'InputShape': list(image.shape),
                            'CnnGroupsPerBatch': CNN_GROUPS_PER_BATCH,

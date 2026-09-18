@@ -1,3 +1,4 @@
+
 using System;
 using System.Net.Http;
 using System.Text;
@@ -15,7 +16,7 @@ public sealed class LatencyApiClient
     };
 
     private string? _runId;
-    public const string RequiredBackendRevision = "latency-v6-isolated-single-pass";
+    public const string RequiredBackendRevision = "latency-v7-gpu-batched-single-pass";
 
     public async Task<LatencyBackendInfo> GetInfoAsync()
     {

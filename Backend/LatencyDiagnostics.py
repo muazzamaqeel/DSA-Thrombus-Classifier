@@ -1,3 +1,4 @@
+
 """Read-only comparison metadata; unavailable driver details are reported explicitly."""
 import os
 import platform
@@ -6,7 +7,7 @@ import subprocess
 import torch
 from LatencyRuntimeLimits import available_ram, CNN_GROUPS_PER_BATCH
 
-BACKEND_REVISION = "latency-v6-isolated-single-pass"
+BACKEND_REVISION = "latency-v7-gpu-batched-single-pass"
 
 
 def get_latency_info():

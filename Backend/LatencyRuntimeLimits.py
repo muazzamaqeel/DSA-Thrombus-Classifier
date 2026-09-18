@@ -1,3 +1,4 @@
+
 """Conservative resource checks; estimates are guards, not allocation guarantees."""
 import ctypes
 import os
@@ -5,7 +6,7 @@ import sys
 
 GIB = 1024 ** 3
 CPU_THREADS = max(1, min(4, (os.cpu_count() or 2) // 2))
-CNN_GROUPS_PER_BATCH = 1  # Each group contains exactly three consecutive slices.
+CNN_GROUPS_PER_BATCH = 4  # Fixed on every machine: four 3-slice CNN inputs per launch.
 
 
 def available_ram():
