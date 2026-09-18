@@ -4,203 +4,248 @@ import os
 import threading
 import time
 import uuid
-from contextlib import nullcontext
 
 import torch
 
 from LatencyDiagnostics import BACKEND_REVISION, get_latency_info
-from LatencyTimer import TIMED_RUNS, WARMUP_RUNS, run_timed_model
+from LatencyTimer import run_timed_model
+from LatencyRuntimeLimits import CNN_GROUPS_PER_BATCH, GIB, CPU_THREADS
+from LatencyRuntime import LatencyRuntime
 
 
-def file_sha256(path):
+class LatencyCancelled(RuntimeError):
+    pass
+
+
+def file_sha256(path, cancel_check=lambda: None):
     digest = hashlib.sha256()
-    with open(path, "rb") as source:
-        for block in iter(lambda: source.read(1024 * 1024), b""):
+    with open(path, 'rb') as source:
+        for block in iter(lambda: source.read(1024 * 1024), b''):
+            cancel_check()
             digest.update(block)
     return digest.hexdigest()
 
 
 def tensor_sha256(tensor):
-    return hashlib.sha256(tensor.detach().cpu().contiguous().numpy().tobytes()).hexdigest()
+    # memoryview avoids another full-volume bytes allocation.
+    array = tensor.detach().cpu().contiguous().numpy()
+    return hashlib.sha256(memoryview(array).cast('B')).hexdigest()
 
 
 class LatencyInferenceService:
-    """Isolate setup/transfer cost from warmed-up FP32 forward measurements."""
-
     def __init__(self, classificator):
-        self.classificator = classificator
-        self._lock = threading.RLock()
+        self.classificator = LatencyRuntime()
+        self._lock = self.classificator.execution_lock
+        self._saved_settings = None
         self._prepared = {}
         self._run_id = None
-        self._resident_all = False
-        self._environment_json = ""
+        self._cancel = threading.Event()
+        self._warmed = set()
+        self._environment_json = ''
+        self._device_label = 'cpu'
 
-    def _models(self):
-        return list(self.classificator.models_frontal.values()) + list(self.classificator.models_lateral.values())
+    def _save_settings(self):
+        targets = [(torch.backends.cudnn, 'benchmark')]
+        if hasattr(torch.backends.cuda.matmul, 'fp32_precision'):
+            targets += [(torch.backends, 'fp32_precision'),
+                        (torch.backends.cuda.matmul, 'fp32_precision'),
+                        (torch.backends.cudnn, 'fp32_precision')]
+        else:
+            targets += [(torch.backends.cuda.matmul, 'allow_tf32'),
+                        (torch.backends.cudnn, 'allow_tf32')]
+        self._saved_settings = (torch.get_num_threads(),
+            torch.cuda.current_device() if torch.cuda.is_available() else None,
+            [(obj, name, getattr(obj, name)) for obj, name in targets])
 
-    def _offload_all(self):
-        for model in self._models():
-            model.cpu()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()  # Setup/recovery only; never inside the timed loop.
-        self._resident_all = False
+    def _restore_settings(self):
+        if self._saved_settings is None:
+            return
+        threads, device, values = self._saved_settings
+        for obj, name, value in values:
+            setattr(obj, name, value)
+        torch.set_num_threads(threads)
+        if device is not None:
+            torch.cuda.set_device(device)
+        self._saved_settings = None
 
-    def configure_execution(self, mode, model_folder, device_index=0):
-        with self._lock:
-            mode = (mode or "").upper()
-            if mode not in ("GPU", "CPU"):
-                raise ValueError("Execution mode must be GPU or CPU.")
-            if not model_folder or not os.path.isdir(model_folder):
-                raise ValueError("The selected model folder does not exist.")
-            if mode == "GPU":
-                if not torch.cuda.is_available():
-                    raise ValueError("GPU was selected, but this backend's PyTorch cannot use CUDA. No CPU fallback was used.")
-                if not isinstance(device_index, int) or device_index < 0 or device_index >= torch.cuda.device_count():
-                    raise ValueError("The selected CUDA device index is unavailable.")
-                device = torch.device(f"cuda:{device_index}")
-            else:
-                device = torch.device("cpu")
+    def cancel(self, run_id):
+        # Intentionally no execution lock: cancellation must reach an active forward pass.
+        if run_id == self._run_id:
+            self._cancel.set()
 
-            self._run_id = None
-            self._prepared.clear()
-            self._offload_all()
-            self.classificator.preparedImages.clear()
-            # CPU checkpoint staging avoids initially allocating all ten models in VRAM.
-            self.classificator.load_models(model_folder, device_override=str(device))
-            for model in self._models():
-                model.float().eval()
-                model.device = device  # CnnLstmModel.forward uses this explicit attribute.
-
-            # Same FP32 policy on Turing and newer GPUs; no automatic mixed precision.
-            if hasattr(torch.backends.cuda.matmul, "fp32_precision"):
-                torch.backends.fp32_precision = "ieee"
-                torch.backends.cuda.matmul.fp32_precision = "ieee"
-                torch.backends.cudnn.fp32_precision = "ieee"
-                torch.backends.cudnn.conv.fp32_precision = "ieee"
-                torch.backends.cudnn.rnn.fp32_precision = "ieee"
-            else:
-                torch.backends.cuda.matmul.allow_tf32 = False
-                torch.backends.cudnn.allow_tf32 = False
-            torch.backends.cudnn.benchmark = mode == "GPU"
-
-            self._resident_all = False
-            if mode == "GPU":
-                with torch.cuda.device(device):
-                    free_bytes, total_bytes = torch.cuda.mem_get_info(device)
-                    weight_bytes = sum(t.numel() * t.element_size() for m in self._models()
-                                       for t in list(m.parameters()) + list(m.buffers()))
-                    reserve = max(1024 ** 3, int(total_bytes * 0.25))
-                    if free_bytes >= weight_bytes + reserve:
-                        try:
-                            for model in self._models():
-                                model.to(device)
-                            self._resident_all = True
-                        except torch.cuda.OutOfMemoryError:
-                            self._offload_all()
-            self._run_id = uuid.uuid4().hex
-            info = get_latency_info()
-            info.update({"Precision": "FP32 (TF32 disabled)", "WarmupRuns": WARMUP_RUNS,
-                         "TimedRuns": TIMED_RUNS, "SelectedDevice": str(device),
-                         "CudnnBenchmark": torch.backends.cudnn.benchmark,
-                         "ModelSha256": {f"{view}/{name}": file_sha256(os.path.join(model_folder, view, name))
-                                         for view in ("frontal", "lateral")
-                                         for name in sorted(os.listdir(os.path.join(model_folder, view)))
-                                         if name.endswith(".pt")}})
-            self._environment_json = json.dumps(info, sort_keys=True)
-            return self._metadata()
+    def _check_cancel(self):
+        if self._cancel.is_set():
+            raise LatencyCancelled('Test stopped. The active GPU operation has finished safely.')
 
     def _require_run(self, run_id):
         if not self._run_id or run_id != self._run_id:
-            raise ValueError("Latency configuration changed or expired. Start a new test run.")
+            raise ValueError('Latency run expired. Start a new test.')
+        self._check_cancel()
+
+    def configure_execution(self, mode, model_folder, device_index=0, run_id=None):
+        with self._lock:
+            if self._run_id is not None:
+                raise ValueError("A latency run is already active. Stop/end it first.")
+            self._run_id = run_id or uuid.uuid4().hex
+            self._save_settings()
+            self._cancel.clear()
+            self._prepared.clear()
+            self._warmed.clear()
+            self.classificator.preparedImages.clear()
+            mode = str(mode).upper()
+            if mode not in ('CPU', 'GPU'):
+                raise ValueError('Choose CPU or GPU.')
+            if mode == 'GPU':
+                if not torch.cuda.is_available():
+                    raise ValueError('CUDA is unavailable in this backend. No CPU fallback was used.')
+                if type(device_index) is not int or not 0 <= device_index < torch.cuda.device_count():
+                    raise ValueError('Selected GPU is unavailable.')
+            device = torch.device(f'cuda:{device_index}' if mode == 'GPU' else 'cpu')
+            self.classificator.load_models(model_folder, device_override=str(device))
+            expected = {f'fold{i}.pt' for i in range(1, 6)}
+            if set(self.classificator.models_frontal) != expected:
+                raise ValueError('Latency requires exactly fold1.pt through fold5.pt in both views.')
+            # Disable autotuning: changing temporal sizes must not trigger costly searches.
+            torch.set_num_threads(CPU_THREADS)
+            torch.backends.cudnn.benchmark = False
+            if hasattr(torch.backends.cuda.matmul, 'fp32_precision'):
+                torch.backends.fp32_precision = 'ieee'
+                torch.backends.cuda.matmul.fp32_precision = 'ieee'
+                torch.backends.cudnn.fp32_precision = 'ieee'
+            else:
+                torch.backends.cuda.matmul.allow_tf32 = False
+                torch.backends.cudnn.allow_tf32 = False
+            self._device_label = f'{device} | {torch.cuda.get_device_name(device)}' if mode == 'GPU' else 'cpu'
+            if mode == 'GPU':
+                # Prove actual kernel execution; availability alone is insufficient.
+                with torch.cuda.device(device):
+                    probe = torch.ones((16, 16), device=device)
+                    probe = probe @ probe
+                    torch.cuda.synchronize(device)
+                    del probe
+            info = get_latency_info()
+            info.update({'Precision': 'FP32 (TF32 disabled)', 'SelectedDevice': str(device),
+                         'CudnnBenchmark': False, 'CnnGroupsPerBatch': CNN_GROUPS_PER_BATCH,
+                         'WarmupPolicy': '1 per model/view on first case only', 'TimedRuns': 1,
+                         'TimingScope': 'Sum of resident-input view classification wall times plus client soft-vote; '
+                                        'excludes disk loading, preprocessing, transfers, warm-up and HTTP.',
+                         'ModelSha256': {f'{view}/{name}': file_sha256(path, self._check_cancel)
+                            for view, paths in [('frontal', self.classificator.models_frontal),
+                                                ('lateral', self.classificator.models_lateral)]
+                            for name, path in paths.items()}})
+            self._check_cancel()
+            self._environment_json = json.dumps(info, sort_keys=True)
+            return self._metadata()
 
     def _metadata(self):
-        device = self.classificator.device
-        name = torch.cuda.get_device_name(device) if device.type == "cuda" else "CPU"
-        return {"BackendRevision": BACKEND_REVISION, "RunId": self._run_id,
-                "ExecutionProvider": "GPU" if device.type == "cuda" else "CPU",
-                "TimingDevice": f"{device} | {name}" if device.type == "cuda" else "cpu",
-                "TimingMethod": "CUDA events: median forward" if device.type == "cuda" else "CPU perf_counter: median forward",
-                "Precision": "FP32 (TF32 disabled)", "WarmupRuns": WARMUP_RUNS, "TimedRuns": TIMED_RUNS,
-                "ModelResidency": "all models on GPU" if self._resident_all else
-                                  "one model on GPU" if device.type == "cuda" else "CPU",
-                "EnvironmentJson": self._environment_json}
+        gpu = self.classificator.device.type == 'cuda'
+        return {'BackendRevision': BACKEND_REVISION, 'RunId': self._run_id,
+                'ExecutionProvider': 'GPU' if gpu else 'CPU', 'TimingDevice': self._device_label,
+                'TimingMethod': 'Sum of single synchronized view classifications + soft-vote',
+                'Precision': 'FP32 (TF32 disabled)', 'WarmupRuns': 1, 'TimedRuns': 1,
+                'ModelResidency': 'one checkpoint at a time', 'EnvironmentJson': self._environment_json}
 
     def prepare_images(self, frontal_path, lateral_path, run_id):
         with self._lock:
             self._require_run(run_id)
-            if not all((frontal_path, lateral_path)) or not all(os.path.isfile(p) for p in (frontal_path, lateral_path)):
-                raise ValueError("At least one requested image path does not exist.")
-            start = time.perf_counter()
-            prepared, _ = self.classificator.load_images(frontal_path, lateral_path, False)
-            preprocess_ms = (time.perf_counter() - start) * 1000.0
-            frontal = torch.unsqueeze(prepared["image"], 0).to(dtype=torch.float32).contiguous()
-            lateral = torch.unsqueeze(prepared["imageOtherView"], 0).to(dtype=torch.float32).contiguous()
-            details = {"PreprocessMilliseconds": preprocess_ms,
-                       "FrontalShape": list(frontal.shape), "LateralShape": list(lateral.shape),
-                       "FrontalFileSha256": file_sha256(frontal_path), "LateralFileSha256": file_sha256(lateral_path),
-                       "FrontalTensorSha256": tensor_sha256(frontal), "LateralTensorSha256": tensor_sha256(lateral)}
-            # One paired case at a time, matching the existing sequential runner.
             self._prepared.clear()
+            self.classificator.release_model()
+            if not all(isinstance(p, str) and os.path.isfile(p) for p in (frontal_path, lateral_path)):
+                raise ValueError('Both input files must exist on the backend computer.')
+            start = time.perf_counter()
+            prepared, preview = self.classificator.load_images(frontal_path, lateral_path, False)
+            del preview
+            self._check_cancel()
+            frontal = prepared['image'].unsqueeze(0).float().contiguous()
+            lateral = prepared['imageOtherView'].unsqueeze(0).float().contiguous()
+            del prepared
+            preprocess_ms = (time.perf_counter() - start) * 1000.0
+            if not torch.isfinite(frontal).all() or not torch.isfinite(lateral).all():
+                raise ValueError('Non-finite normalized input (for example a constant sequence). Case rejected.')
+            details = {'PreprocessMilliseconds': preprocess_ms,
+                       'FrontalShape': list(frontal.shape), 'LateralShape': list(lateral.shape),
+                       'FrontalFileSha256': file_sha256(frontal_path, self._check_cancel),
+                       'LateralFileSha256': file_sha256(lateral_path, self._check_cancel),
+                       'FrontalTensorSha256': tensor_sha256(frontal),
+                       'LateralTensorSha256': tensor_sha256(lateral)}
+            self._check_cancel()
             self._prepared[(frontal_path, lateral_path)] = (frontal, lateral)
-            return {"PreparationJson": json.dumps(details, sort_keys=True)}
+            return {'PreparationJson': json.dumps(details, sort_keys=True)}
 
     def release_images(self, frontal_path, lateral_path, run_id):
         with self._lock:
             if run_id == self._run_id:
-                self._prepared.pop((frontal_path, lateral_path), None)
+                self._prepared.clear()
+                self.classificator.release_model()
 
-    def _run_view(self, model, cpu_image):
-        try:
-            return self._run_view_once(model, cpu_image)
-        except torch.cuda.OutOfMemoryError:
-            if not self._resident_all:
-                raise
-        # Retry outside the exception handler, after its traceback releases intermediates.
-        self._offload_all()
-        return self._run_view_once(model, cpu_image)
+    def end_run(self, run_id):
+        with self._lock:
+            if run_id == self._run_id:
+                self._prepared.clear()
+                self.classificator.release_model()
+                self._restore_settings()
+                self._run_id = None
 
-    def _run_view_once(self, model, cpu_image):
+    def _run_view(self, view, model_name, cpu_image):
+        self._check_cancel()
+        load_start = time.perf_counter()
+        model = self.classificator.get_model(view, model_name, self._check_cancel)
+        load_ms = (time.perf_counter() - load_start) * 1000.0
         device = self.classificator.device
         image = None
-        with torch.cuda.device(device) if device.type == "cuda" else nullcontext():
-            try:
-                start = time.perf_counter()
-                if not self._resident_all:
-                    model.to(device)
-                if device.type == "cuda":
-                    torch.cuda.synchronize(device)
-                model_transfer_ms = (time.perf_counter() - start) * 1000.0
-                start = time.perf_counter()
-                image = cpu_image.to(device=device, dtype=torch.float32)
-                if device.type == "cuda":
-                    torch.cuda.synchronize(device)
-                input_transfer_ms = (time.perf_counter() - start) * 1000.0
-                result = run_timed_model(model, image, device)
-                result.update({"ModelTransferMilliseconds": model_transfer_ms,
-                               "InputTransferMilliseconds": input_transfer_ms,
-                               "InputShape": list(image.shape)})
-                return result
-            finally:
-                del image
-                if not self._resident_all and device.type == "cuda":
-                    model.cpu()  # Low-memory policy, outside all recorded forward times.
+        try:
+            if device.type == 'cuda':
+                free, total = torch.cuda.mem_get_info(device)
+                weights = sum(t.numel() * t.element_size() for t in list(model.parameters()) + list(model.buffers()))
+                # A conservative reserve for CNN activations/workspace and the desktop.
+                reserve = max(GIB, int(total * 0.25))
+                if free < weights + cpu_image.numel() * 4 + reserve:
+                    raise MemoryError('Insufficient free VRAM for one model, input and reserve. Test stopped; no CPU fallback.')
+                torch.cuda.reset_peak_memory_stats(device)
+            transfer_start = time.perf_counter()
+            model.to(device)
+            if device.type == 'cuda':
+                torch.cuda.synchronize(device)
+            model_ms = (time.perf_counter() - transfer_start) * 1000.0
+            transfer_start = time.perf_counter()
+            image = cpu_image.to(device)
+            if device.type == 'cuda':
+                torch.cuda.synchronize(device)
+            input_ms = (time.perf_counter() - transfer_start) * 1000.0
+            key = (view, model_name)
+            result = run_timed_model(model, image, device, warmup_runs=0 if key in self._warmed else 1,
+                                     cancel_check=self._check_cancel)
+            self._warmed.add(key)
+            result.update({'CheckpointLoadMilliseconds': load_ms, 'ModelTransferMilliseconds': model_ms,
+                           'InputTransferMilliseconds': input_ms, 'InputShape': list(image.shape),
+                           'CnnGroupsPerBatch': CNN_GROUPS_PER_BATCH,
+                           'PeakAllocatedVramBytes': torch.cuda.max_memory_allocated(device) if device.type == 'cuda' else 0,
+                           'PeakReservedVramBytes': torch.cuda.max_memory_reserved(device) if device.type == 'cuda' else 0})
+            return result
+        finally:
+            del image
+            # Release, rather than making a second CPU copy of the GPU weights.
+            del model
+            self.classificator.release_model()
 
     def classify(self, model_name, frontal_path, lateral_path, run_id):
         with self._lock:
             self._require_run(run_id)
-            if model_name not in self.classificator.models_frontal or model_name not in self.classificator.models_lateral:
-                raise ValueError(f"Unknown model: {model_name}")
+            if model_name not in self.classificator.models_frontal:
+                raise ValueError('Unknown model checkpoint.')
             images = self._prepared.get((frontal_path, lateral_path))
             if images is None:
-                raise ValueError("Images must be prepared before latency classification.")
+                raise ValueError('Prepare images before classification.')
             start = time.perf_counter()
-            frontal = self._run_view(self.classificator.models_frontal[model_name], images[0])
-            lateral = self._run_view(self.classificator.models_lateral[model_name], images[1])
+            frontal = self._run_view('frontal', model_name, images[0])
+            lateral = self._run_view('lateral', model_name, images[1])
             result = self._metadata()
-            result.update({"OutputFrontal": [frontal["ModelOutput"]], "OutputLateral": [lateral["ModelOutput"]],
-                           "FrontalInferenceMilliseconds": frontal["ForwardMilliseconds"],
-                           "LateralInferenceMilliseconds": lateral["ForwardMilliseconds"],
-                           "FrontalBenchmarkJson": json.dumps(frontal, sort_keys=True),
-                           "LateralBenchmarkJson": json.dumps(lateral, sort_keys=True),
-                           "BackendRequestMilliseconds": (time.perf_counter() - start) * 1000.0})
+            result.update({'OutputFrontal': [frontal['ModelOutput']], 'OutputLateral': [lateral['ModelOutput']],
+                           'FrontalInferenceMilliseconds': frontal['ClassificationMilliseconds'],
+                           'LateralInferenceMilliseconds': lateral['ClassificationMilliseconds'],
+                           'FrontalForwardMilliseconds': frontal['ForwardMilliseconds'],
+                           'LateralForwardMilliseconds': lateral['ForwardMilliseconds'],
+                           'FrontalBenchmarkJson': json.dumps(frontal, sort_keys=True),
+                           'LateralBenchmarkJson': json.dumps(lateral, sort_keys=True),
+                           'BackendRequestMilliseconds': (time.perf_counter() - start) * 1000.0})
             return result

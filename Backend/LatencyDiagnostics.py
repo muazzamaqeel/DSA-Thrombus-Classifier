@@ -4,8 +4,9 @@ import platform
 import subprocess
 
 import torch
+from LatencyRuntimeLimits import available_ram, CNN_GROUPS_PER_BATCH
 
-BACKEND_REVISION = "latency-v4-fp32"
+BACKEND_REVISION = "latency-v6-isolated-single-pass"
 
 
 def get_latency_info():
@@ -26,6 +27,10 @@ def get_latency_info():
         gpu_state = f"Unavailable: {error}"
     return {
         "BackendRevision": BACKEND_REVISION,
+        "AvailableRamGiB": available_ram() / 1073741824,
+        "CnnGroupsPerBatch": CNN_GROUPS_PER_BATCH,
+        "Pid": os.getpid(),
+        "TorchCudaArchitectures": torch.cuda.get_arch_list() if torch.cuda.is_available() else [],
         "Devices": devices,
         "TorchVersion": str(torch.__version__),
         "CudaVersion": str(torch.version.cuda),

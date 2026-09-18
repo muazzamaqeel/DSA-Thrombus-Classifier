@@ -15,6 +15,21 @@ namespace UI.View;
 
 public partial class LatencyTestWindow
 {
+    private readonly Button _latencyModelsButton = new()
+    {
+        Content = "Select latency models", MinWidth = 120, MinHeight = 36,
+        HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 0)
+    };
+    private readonly Button _stopLatencyButton = new()
+    {
+        Content = "Stop test", IsEnabled = false, MinWidth = 120, MinHeight = 36,
+        HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 10, 0, 0)
+    };
+    private readonly TextBlock _classificationStdText = new()
+    {
+        Text = "Sample SD: - (n=0)", Margin = new Thickness(0, 10, 0, 0), TextWrapping = TextWrapping.Wrap
+    };
+
     private readonly Button _csvExportButton = new()
     {
         Content = "CSV Export",
@@ -39,7 +54,7 @@ public partial class LatencyTestWindow
             if (e.PropertyName is nameof(LatencyCase.ModelOutput) or nameof(LatencyCase.Threshold)
                 or nameof(LatencyCase.TimingMethod) or nameof(LatencyCase.ModelResidency)
                 or nameof(LatencyCase.EnvironmentJson) or nameof(LatencyCase.PreparationJson)
-                or nameof(LatencyCase.ClientCaseMilliseconds))
+                or nameof(LatencyCase.ClientCaseMilliseconds) or nameof(LatencyCase.ForwardMilliseconds))
                 e.Cancel = true;
         };
         FrontalLatencyGrid.AutoGeneratingColumn += HideExtraMeasurementColumns;
@@ -67,6 +82,11 @@ public partial class LatencyTestWindow
         // The new actions sit directly below the named EXECUTION value.
         var actions = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right };
         _csvExportButton.Click += CsvExport_Click;
+        _latencyModelsButton.Click += (_, _) => SelectLatencyModels();
+        actions.Children.Add(_latencyModelsButton);
+        actions.Children.Add(_classificationStdText);
+        _stopLatencyButton.Click += StopLatencyTest_Click;
+        actions.Children.Add(_stopLatencyButton);
         actions.Children.Add(_csvExportButton);
 
         var showTiming = new CheckBox
@@ -94,7 +114,7 @@ public partial class LatencyTestWindow
     private static void HideExtraMeasurementColumns(object? sender, DataGridAutoGeneratingColumnEventArgs e)
     {
         if (e.PropertyName is nameof(ViewLatencyMeasurement.ModelOutput) or nameof(ViewLatencyMeasurement.CaseKey)
-            or nameof(ViewLatencyMeasurement.BenchmarkJson))
+            or nameof(ViewLatencyMeasurement.BenchmarkJson) or nameof(ViewLatencyMeasurement.ForwardMilliseconds))
             e.Cancel = true;
     }
 
@@ -249,18 +269,18 @@ public partial class LatencyTestWindow
             var name = grid == LatencyResultsGrid ? "Ensemble" : grid == FrontalLatencyGrid ? "Frontal" : "Lateral";
             foreach (var column in grid.Columns)
             {
-                if (NormalizeHeader(column.Header).Contains("INFERENCE"))
-                    column.Header = $"{name} forward (ms)";
+                if ((NormalizeHeader(column.Header).Contains("INFERENCE") || NormalizeHeader(column.Header).Contains("FORWARD")))
+                    column.Header = $"{name} classification (ms)";
             }
         }
         foreach (var text in VisualDescendants<TextBlock>(this))
         {
             if (text.Text.Equals("MEAN INFERENCE", StringComparison.OrdinalIgnoreCase))
-                text.Text = "MEAN FORWARD";
+                text.Text = "MEAN CLASSIFICATION";
             if (text.Text.StartsWith("Each row represents a paired DSA case.", StringComparison.Ordinal))
-                text.Text = "Each row is a paired case. Time sums warmed-up model forward passes; loading, transfers and warm-up are excluded.";
+                text.Text = "Each row is a paired case: one measured prediction per view and fold, plus soft voting. Loading, preprocessing, transfers and the first-case warm-up are excluded.";
         }
-        LatencyResultsGrid.ToolTip = "GPU: CUDA-event median of 3 forward passes after 2 warm-ups per model/view. CPU: wall-clock median. CSV includes setup, transfer and client processing details.";
+        LatencyResultsGrid.ToolTip = "Classification uses synchronized wall time with one pass per view/fold. CSV also records forward time, transfers, warm-up and client processing time. Mean and sample SD are across completed cases.";
     }
 
     private void CsvExport_Click(object sender, RoutedEventArgs e)

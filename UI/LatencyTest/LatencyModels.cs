@@ -35,6 +35,8 @@ public sealed class LatencyClassificationResponse : ClassificationResponse
     public string ModelResidency { get; set; } = "";
     public string FrontalBenchmarkJson { get; set; } = "";
     public string LateralBenchmarkJson { get; set; } = "";
+    public double FrontalForwardMilliseconds { get; set; }
+    public double LateralForwardMilliseconds { get; set; }
     public double FrontalInferenceMilliseconds { get; set; }
     public double LateralInferenceMilliseconds { get; set; }
     public string? TimingDevice { get; set; }
@@ -55,6 +57,7 @@ public sealed class LatencyCase
     // The exact combined score passed to HasThrombus, before thresholding.
     public double? ModelOutput { get; set; }
     public double? Threshold { get; set; }
+    public double? ForwardMilliseconds { get; set; }
     public double? InferenceMilliseconds { get; set; }
     public string ExecutionProvider { get; set; } = "-";
     public string TimingDevice { get; set; } = "-";
@@ -68,6 +71,7 @@ public sealed class LatencyCase
         ModelOutput = null;
         Threshold = null;
         InferenceMilliseconds = null;
+        ForwardMilliseconds = null;
         ExecutionProvider = "-";
         TimingDevice = "-";
         Status = "Ready";
@@ -83,6 +87,7 @@ public sealed class ViewLatencyMeasurement
     public string BenchmarkJson { get; init; } = "";
     public double ModelOutput { get; init; }
     public double LatencyMilliseconds { get; init; }
+    public double ForwardMilliseconds { get; init; }
     public string ExecutionProvider { get; init; } = "-";
     public string Status => "Complete";
 }
@@ -98,6 +103,7 @@ public sealed class LatencyCaseRunResult
     public double ModelOutput { get; init; }
     public double Threshold { get; init; }
     public double InferenceMilliseconds { get; init; }
+    public double ForwardMilliseconds { get; init; }
     public string ExecutionProvider { get; init; } = "-";
     public string TimingDevice { get; init; } = "-";
     public IReadOnlyList<ViewLatencyMeasurement> FrontalMeasurements { get; init; } = [];
@@ -106,6 +112,8 @@ public sealed class LatencyCaseRunResult
 
 public sealed class LatencyMetricSummary
 {
+    public int Count { get; init; }
+    public double? StandardDeviation { get; init; }
     public double? Mean { get; init; }
     public double? Min { get; init; }
     public double? Max { get; init; }

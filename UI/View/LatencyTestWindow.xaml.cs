@@ -4,6 +4,8 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Threading;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -24,7 +26,9 @@ public partial class LatencyTestWindow : Window
     private readonly ObservableCollection<LatencyCase> _cases = new();
     private readonly ObservableCollection<ViewLatencyMeasurement> _frontal = new();
     private readonly ObservableCollection<ViewLatencyMeasurement> _lateral = new();
+    private string? _latencyModelFolder;
     private bool _isRunning;
+    private CancellationTokenSource? _runCancellation;
     private bool _isScanning;
     private bool _devicesLoaded;
 
@@ -42,6 +46,8 @@ public partial class LatencyTestWindow : Window
     {
         InitializeComponent();
         InitializeResultExportControls();
+        Title = "Latency Test - v6 single pass";
+        Closing += OnLatencyWindowClosing;
         LatencyProgressBar.IsIndeterminate = false;
         LatencyProgressBar.Minimum = 0;
         LatencyProgressBar.Maximum = 100;
@@ -145,96 +151,97 @@ public partial class LatencyTestWindow : Window
     private void StartLatencyTestSurface_MouseLeftButtonUp(
         object sender, MouseButtonEventArgs e) => StartLatencyTestButton_Click(sender, e);
 
+    private async void StopLatencyTest_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_isRunning) return;
+        _runCancellation?.Cancel();
+        _stopLatencyButton.IsEnabled = false;
+        LatencyProgressText.Text = "Stopping after the active operation...";
+        try { await _runner.CancelAsync(); }
+        catch (Exception error) { LatencyProgressText.Text = $"Stop request failed: {error.Message}"; }
+    }
+
+    private void OnLatencyWindowClosing(object? sender, CancelEventArgs e)
+    {
+        if (!_isRunning) return;
+        e.Cancel = true;
+        StopLatencyTest_Click(this, new RoutedEventArgs());
+    }
+
     private async void StartLatencyTestButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_isRunning || _isScanning)
-            return;
-
-        if (!TryGetPaperModels(out var models))
-            return;
-
+        if (_isRunning || _isScanning || !TryGetPaperModels(out var models)) return;
         BeginRun();
-
+        _runCancellation = new CancellationTokenSource();
+        var token = _runCancellation.Token;
         var selected = LatencyExecutionModeComboBox.SelectedItem as ComboBoxItem;
         var deviceIndex = selected?.Tag is int index ? index : -1;
         var requestedMode = deviceIndex >= 0 ? "GPU" : "CPU";
-
-        LatencyProgressText.Text =
-            $"Configuring {requestedMode} execution...";
-
+        var threshold = LatencyThresholdSlider.Value;
+        var completed = 0;
+        LatencyCase? activeCase = null;
         try
         {
-            var vm = (MainWindowViewModel)DataContext;
+            LatencyProgressText.Text = $"Checking {requestedMode} and checkpoint fingerprints...";
             var execution = await _runner.ConfigureExecutionAsync(
-                requestedMode, vm.ModelSelectionFolder, Math.Max(deviceIndex, 0));
-
-            ExecutionSummaryText.Text =
-                $"{execution.ExecutionProvider} ({execution.TimingDevice})";
-        }
-        catch (Exception error)
-        {
-            _isRunning = false;
-            StartLatencyTestButton.IsEnabled = true;
-            LatencyExecutionModeComboBox.IsEnabled = true;
-            LatencyProgressText.Text = "Execution-device configuration failed.";
-
-            MessageBox.Show(
-                error.Message,
-                "Latency Test - Execution Device",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-            return;
-        }
-
-        var failures = new List<string>();
-        var completed = 0;
-
-        foreach (var latencyCase in _cases)
-        {
-            latencyCase.Status = "Processing";
-            LatencyProgressText.Text =
-                $"Processing {completed + 1} of {_cases.Count}: {latencyCase.CaseName}";
-            LatencyResultsGrid.Items.Refresh();
-
-            try
+                requestedMode, _latencyModelFolder!, Math.Max(deviceIndex, 0));
+            token.ThrowIfCancellationRequested();
+            ExecutionSummaryText.Text = $"{execution.ExecutionProvider} ({execution.TimingDevice})";
+            foreach (var latencyCase in _cases)
             {
-                var result = await _runner.RunCaseAsync(
-                    latencyCase, models, LatencyThresholdSlider.Value);
-
+                token.ThrowIfCancellationRequested();
+                activeCase = latencyCase;
+                latencyCase.Status = "Processing";
+                LatencyProgressText.Text = $"Processing {completed + 1} of {_cases.Count}: {latencyCase.CaseName}";
+                LatencyResultsGrid.Items.Refresh();
+                var result = await _runner.RunCaseAsync(latencyCase, models, threshold, token);
+                token.ThrowIfCancellationRequested();
                 ApplyResult(latencyCase, result);
                 foreach (var row in result.FrontalMeasurements) _frontal.Add(row);
                 foreach (var row in result.LateralMeasurements) _lateral.Add(row);
+                completed++;
+                activeCase = null;
+                LatencyProgressBar.Value = (double)completed / _cases.Count * 100;
+                LatencyResultsGrid.Items.Refresh();
+                UpdateSummaries();
+                await Dispatcher.Yield(DispatcherPriority.Background);
             }
+            LatencyProgressText.Text = $"Completed {completed} of {_cases.Count} cases. One measured pass per view/fold.";
+        }
+        catch (Exception error)
+        {
+            var cancelled = token.IsCancellationRequested;
+            if (activeCase is not null)
+            {
+                activeCase.Status = cancelled ? "Cancelled" : "Failed";
+                activeCase.Classification = cancelled ? "-" : "Error";
+            }
+            foreach (var item in _cases.Where(x => x.Status == "Ready")) item.Status = "Not run";
+            LatencyProgressText.Text = cancelled
+                ? $"Stopped. {completed} completed cases are available for CSV export."
+                : $"Test stopped after {completed} cases: {error.Message}";
+            try { await _runner.CancelAsync(); } catch (Exception) { /* Keep the original failure. */ }
+            if (!cancelled)
+                MessageBox.Show(this, error.Message, "Latency test stopped", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            try { await _runner.EndAsync(); }
             catch (Exception error)
             {
-                latencyCase.Status = "Failed";
-                latencyCase.Classification = "Error";
-                failures.Add($"{latencyCase.CaseName}: {error.Message}");
+                LatencyProgressText.Text += $" Cleanup pending: {error.Message}. Restart the backend if it remains busy.";
             }
-
-            completed++;
-            LatencyProgressBar.Value = (double)completed / _cases.Count * 100.0;
+            _isRunning = false;
+            _runCancellation.Dispose();
+            _runCancellation = null;
+            _stopLatencyButton.IsEnabled = false;
+            _latencyModelsButton.IsEnabled = true;
+            _csvExportButton.IsEnabled = _cases.Count > 0;
+            StartLatencyTestButton.IsEnabled = _devicesLoaded && _cases.Count > 0;
+            LatencyExecutionModeComboBox.IsEnabled = true;
+            LatencyThresholdSlider.IsEnabled = true;
             LatencyResultsGrid.Items.Refresh();
             UpdateSummaries();
-            await Dispatcher.Yield(DispatcherPriority.Background);
-        }
-
-        _isRunning = false;
-        _csvExportButton.IsEnabled = _cases.Count > 0;
-        StartLatencyTestButton.IsEnabled = true;
-        LatencyExecutionModeComboBox.IsEnabled = true;
-        StartLatencyTestButton.ToolTip = "Run latency test again";
-        LatencyProgressText.Text = failures.Count == 0
-            ? $"Completed {_cases.Count} of {_cases.Count} cases."
-            : $"Completed {_cases.Count - failures.Count} cases. {failures.Count} failed.";
-
-        if (failures.Count > 0)
-        {
-            var shown = string.Join("\n", failures.Take(10));
-            var more = failures.Count > 10 ? $"\n... and {failures.Count - 10} more." : "";
-            MessageBox.Show(
-                $"{failures.Count} case(s) failed.\n\n{shown}{more}",
-                "Latency Test", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
@@ -247,17 +254,10 @@ public partial class LatencyTestWindow : Window
         if (_cases.Count == 0)
             return Warn("No dataset cases are available.");
 
-        if (DataContext is not MainWindowViewModel vm)
-            return Warn("The classifier view model is unavailable.");
-
-        if (string.IsNullOrWhiteSpace(vm.ModelSelectionFolder))
-            return Warn("Please select a model folder first.");
-
-        if (vm.ModelSelectionFolderBadge.Kind != PackIconKind.Check)
-            return Warn("Please wait until model initialization has completed.");
-
-        var frontal = Path.Combine(vm.ModelSelectionFolder, "frontal");
-        var lateral = Path.Combine(vm.ModelSelectionFolder, "lateral");
+        if (string.IsNullOrWhiteSpace(_latencyModelFolder) && !SelectLatencyModels())
+            return false;
+        var frontal = Path.Combine(_latencyModelFolder!, "frontal");
+        var lateral = Path.Combine(_latencyModelFolder!, "lateral");
         if (!Directory.Exists(frontal) || !Directory.Exists(lateral))
             return Warn("The model folder must contain frontal and lateral directories.");
 
@@ -270,6 +270,20 @@ public partial class LatencyTestWindow : Window
                 "exactly fold1.pt through fold5.pt.");
         }
 
+        return true;
+    }
+
+    private bool SelectLatencyModels()
+    {
+        if (_isRunning) return false;
+        using var dialog = new CommonOpenFileDialog
+        {
+            IsFolderPicker = true, Title = "Select latency models (frontal and lateral folders)"
+        };
+        if (dialog.ShowDialog() != CommonFileDialogResult.Ok) return false;
+        _latencyModelFolder = dialog.FileName;
+        _latencyModelsButton.ToolTip = _latencyModelFolder;
+        _latencyModelsButton.Content = "Change latency models";
         return true;
     }
 
@@ -289,6 +303,9 @@ public partial class LatencyTestWindow : Window
     private void BeginRun()
     {
         _isRunning = true;
+        _latencyModelsButton.IsEnabled = false;
+        _stopLatencyButton.IsEnabled = true;
+        LatencyThresholdSlider.IsEnabled = false;
         _csvExportButton.IsEnabled = false;
         StartLatencyTestButton.IsEnabled = false;
         LatencyExecutionModeComboBox.IsEnabled = false;
@@ -313,6 +330,7 @@ public partial class LatencyTestWindow : Window
             ? "Thrombus detected"
             : "No Thrombus detected";
         latencyCase.InferenceMilliseconds = result.InferenceMilliseconds;
+        latencyCase.ForwardMilliseconds = result.ForwardMilliseconds;
         latencyCase.ExecutionProvider = result.ExecutionProvider;
         latencyCase.TimingDevice = result.TimingDevice;
         latencyCase.Status = "Complete";
@@ -320,6 +338,10 @@ public partial class LatencyTestWindow : Window
 
     private void UpdateSummaries()
     {
+        var summary = LatencyStatistics.Calculate(_cases.Where(x => x.Status == "Complete" && x.InferenceMilliseconds.HasValue)
+            .Select(x => x.InferenceMilliseconds!.Value));
+        _classificationStdText.Text = summary.StandardDeviation is double sd
+            ? $"Sample SD: {sd:F2} ms (n={summary.Count})" : $"Sample SD: - (n={summary.Count})";
         SetSummary(
             LatencyStatistics.Calculate(_cases
                 .Where(x => x.InferenceMilliseconds.HasValue)
@@ -373,6 +395,7 @@ public partial class LatencyTestWindow : Window
     private void ResetSummaries()
     {
         LatencyAverageText.Text = LatencyMinText.Text = LatencyMaxText.Text = "- ms";
+        _classificationStdText.Text = "Sample SD: - (n=0)";
         ExecutionSummaryText.Text = "-";
         FrontalSequenceCountText.Text = FrontalMeasurementCountText.Text = "0";
         LateralSequenceCountText.Text = LateralMeasurementCountText.Text = "0";

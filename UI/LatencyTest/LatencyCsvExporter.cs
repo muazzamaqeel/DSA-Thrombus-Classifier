@@ -26,19 +26,25 @@ public static class LatencyCsvExporter
         var header = new List<string>
         {
             "Case", "Classification", "Model output", "Threshold",
-            "Ensemble forward (ms)", "Execution provider", "Timing device", "Status",
+            "Ensemble classification (ms)", "Execution provider", "Timing device", "Status",
             "Frontal path", "Lateral path", "Timing method", "Model residency",
-            "Client case processing (ms; excludes release)", "Preparation details JSON", "Environment JSON"
+            "Client case processing (ms; excludes release)", "Preparation details JSON", "Environment JSON",
+            "Ensemble forward (ms)"
         };
         foreach (var model in modelNames)
         {
             header.Add($"Frontal {model} output");
             header.Add($"Lateral {model} output");
-            header.Add($"Frontal {model} forward (ms)");
-            header.Add($"Lateral {model} forward (ms)");
+            header.Add($"Frontal {model} classification (ms)");
+            header.Add($"Lateral {model} classification (ms)");
             header.Add($"Frontal {model} benchmark JSON");
             header.Add($"Lateral {model} benchmark JSON");
+            header.Add($"Frontal {model} forward (ms)");
+            header.Add($"Lateral {model} forward (ms)");
         }
+        header.AddRange(new[] { "Completed paired cases", "Mean classification (ms)", "Sample SD classification (ms; n-1)" });
+        var summary = LatencyStatistics.Calculate(cases.Where(x => x.Status == "Complete" && x.InferenceMilliseconds.HasValue)
+            .Select(x => x.InferenceMilliseconds!.Value));
         WriteRow(writer, header);
 
         foreach (var item in cases)
@@ -49,7 +55,8 @@ public static class LatencyCsvExporter
                 Number(item.Threshold), Number(item.InferenceMilliseconds),
                 item.ExecutionProvider, item.TimingDevice, item.Status,
                 item.FrontalPath, item.LateralPath, item.TimingMethod, item.ModelResidency,
-                Number(item.ClientCaseMilliseconds), item.PreparationJson, item.EnvironmentJson
+                Number(item.ClientCaseMilliseconds), item.PreparationJson, item.EnvironmentJson,
+                Number(item.ForwardMilliseconds)
             };
             foreach (var model in modelNames)
             {
@@ -61,7 +68,12 @@ public static class LatencyCsvExporter
                 fields.Add(Number(l?.LatencyMilliseconds));
                 fields.Add(f?.BenchmarkJson ?? "");
                 fields.Add(l?.BenchmarkJson ?? "");
+                fields.Add(Number(f?.ForwardMilliseconds));
+                fields.Add(Number(l?.ForwardMilliseconds));
             }
+            fields.Add(summary.Count.ToString(CultureInfo.InvariantCulture));
+            fields.Add(Number(summary.Mean));
+            fields.Add(Number(summary.StandardDeviation));
             WriteRow(writer, fields);
         }
     }
