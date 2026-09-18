@@ -6,10 +6,12 @@ import numpy as np
 from flask import Flask, request
 
 import Classificator
+from LatencyTestApi import create_latency_blueprint
 
 app = Flask(__name__)
 
 classificator = Classificator.Classificator()
+app.register_blueprint(create_latency_blueprint(classificator))
 
 
 @app.route("/AiService/PreloadModels", methods=["POST"])
